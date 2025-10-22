@@ -7,6 +7,11 @@ export class CreateUserDto {
   @IsEmail()
   email: string;
 
+  @ApiProperty({ example: 'John Doe', required: false })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
   @ApiProperty({ example: 'password123' })
   @IsString()
   @MinLength(6)
@@ -23,6 +28,11 @@ export class UpdateUserDto {
   @IsEmail()
   @IsOptional()
   email?: string;
+
+  @ApiProperty({ example: 'John Doe', required: false })
+  @IsOptional()
+  @IsString()
+  name?: string;
 
   @ApiProperty({ example: 'password123', required: false })
   @IsString()
@@ -47,6 +57,9 @@ export class UserResponseDto {
 
   @ApiProperty()
   email: string;
+
+  @ApiProperty({ required: false })
+  name?: string;
 
   @ApiProperty({ enum: UserRole })
   role: UserRole;
