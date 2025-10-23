@@ -1,4 +1,4 @@
-import { IsEmail, IsString, MinLength, IsOptional } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsOptional, IsNumber } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class LoginDto {
@@ -21,6 +21,11 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   name?: string;
+
+  @ApiProperty({ example: 100, required: false, description: 'Initial gem amount' })
+  @IsOptional()
+  @IsNumber()
+  gem?: number;
 
   @ApiProperty({ example: 'password123' })
   @IsString()

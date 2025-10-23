@@ -24,6 +24,9 @@ export class User {
   @Column({ nullable: true })
   name: string;
 
+  @Column({ default: 0 })
+  gem: number;
+
   @Column()
   password: string;
 

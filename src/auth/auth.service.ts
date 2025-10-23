@@ -85,6 +85,7 @@ export class AuthService {
     const user = this.userRepository.create({
       email: registerDto.email,
       name: registerDto.name,
+      gem: registerDto.gem || 0,
       password: hashedPassword,
       role: UserRole.USER,
     });

@@ -1,4 +1,4 @@
-import { IsEmail, IsString, MinLength, IsOptional, IsEnum, IsBoolean } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsOptional, IsEnum, IsBoolean, IsNumber } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { UserRole } from '../entities/user.entity';
 
@@ -11,6 +11,11 @@ export class CreateUserDto {
   @IsOptional()
   @IsString()
   name?: string;
+
+  @ApiProperty({ example: 100, required: false, description: 'Initial gem amount' })
+  @IsOptional()
+  @IsNumber()
+  gem?: number;
 
   @ApiProperty({ example: 'password123' })
   @IsString()
@@ -33,6 +38,11 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   name?: string;
+
+  @ApiProperty({ example: 150, required: false, description: 'Gem amount' })
+  @IsOptional()
+  @IsNumber()
+  gem?: number;
 
   @ApiProperty({ example: 'password123', required: false })
   @IsString()
@@ -60,6 +70,9 @@ export class UserResponseDto {
 
   @ApiProperty({ required: false })
   name?: string;
+
+  @ApiProperty({ description: 'Gem amount' })
+  gem: number;
 
   @ApiProperty({ enum: UserRole })
   role: UserRole;
