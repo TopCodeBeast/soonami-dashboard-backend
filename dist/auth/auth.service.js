@@ -58,6 +58,7 @@ let AuthService = class AuthService {
             refreshToken,
             user: {
                 id: user.id,
+                name: user.name,
                 email: user.email,
                 role: user.role,
                 wallets: user.wallets,

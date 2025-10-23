@@ -12,6 +12,7 @@ export declare class AuthService {
         refreshToken: string;
         user: {
             id: any;
+            name: any;
             email: any;
             role: any;
             wallets: any;
