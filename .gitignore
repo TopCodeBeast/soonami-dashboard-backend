@@ -136,8 +136,3 @@ ecosystem.config.js.bak
 # Docker files
 .dockerignore
 docker-compose.override.yml
-
-# Preseed scripts temporary files
-temp_manager.sql
-create_manager.js
-list_managers.js

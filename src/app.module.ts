@@ -5,6 +5,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { WalletsModule } from './wallets/wallets.module';
+import { DatabaseSeederModule } from './database-seeder/database-seeder.module';
 import { User } from './users/entities/user.entity';
 import { Wallet } from './wallets/entities/wallet.entity';
 
@@ -33,6 +34,7 @@ import { Wallet } from './wallets/entities/wallet.entity';
     AuthModule,
     UsersModule,
     WalletsModule,
+    DatabaseSeederModule,
   ],
 })
 export class AppModule {}
