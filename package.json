@@ -20,7 +20,8 @@
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "preseed:manager": "chmod +x preseed-manager.sh && ./preseed-manager.sh",
     "preseed:manager:win": "powershell -ExecutionPolicy Bypass -File preseed-manager.ps1",
-    "preseed:manager:cross": "node -e \"const os=require('os'); if(os.platform()==='win32'){require('child_process').execSync('powershell -ExecutionPolicy Bypass -File preseed-manager.ps1',{stdio:'inherit'})}else{require('child_process').execSync('chmod +x preseed-manager.sh && ./preseed-manager.sh',{stdio:'inherit'})}\""
+    "preseed:manager:cross": "node -e \"const os=require('os'); if(os.platform()==='win32'){require('child_process').execSync('powershell -ExecutionPolicy Bypass -File preseed-manager.ps1',{stdio:'inherit'})}else{require('child_process').execSync('chmod +x preseed-manager.sh && ./preseed-manager.sh',{stdio:'inherit'})}\"",
+    "list:managers": "chmod +x list-managers.sh && ./list-managers.sh"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",
