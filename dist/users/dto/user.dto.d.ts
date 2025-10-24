@@ -5,6 +5,7 @@ export declare class CreateUserDto {
     gem?: number;
     password: string;
     role?: UserRole;
+    isActive?: boolean;
 }
 export declare class UpdateUserDto {
     email?: string;
