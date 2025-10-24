@@ -89,7 +89,7 @@ async function createManager() {
         
         // Create SQL to insert manager user
         const sql = \`
-            INSERT INTO users (id, email, name, password, role, isActive, "createdAt", "updatedAt")
+            INSERT INTO users (id, email, name, password, role, "isActive", "createdAt", "updatedAt")
             VALUES (
                 gen_random_uuid(),
                 '\${managerEmail}',
@@ -104,9 +104,9 @@ async function createManager() {
                 name = EXCLUDED.name,
                 password = EXCLUDED.password,
                 role = EXCLUDED.role,
-                isActive = EXCLUDED.isActive,
+                "isActive" = EXCLUDED."isActive",
                 "updatedAt" = NOW()
-            RETURNING id, email, name, role, isActive;
+            RETURNING id, email, name, role, "isActive";
         \`;
         
         // Execute SQL using psql
