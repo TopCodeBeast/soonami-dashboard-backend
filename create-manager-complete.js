@@ -17,11 +17,11 @@ const MANAGER_EMAIL = 'manager@manager.com';
 const MANAGER_NAME = 'System Manager';
 const MANAGER_PASSWORD = 'manager123!@#';
 
-// Database configuration (from environment or defaults)
+// Database configuration (from environment or production defaults)
 const DB_HOST = process.env.DB_HOST || '127.0.0.1';
-const DB_PORT = process.env.DB_PORT || '5432';
+const DB_PORT = process.env.DB_PORT || '5433';
 const DB_USERNAME = process.env.DB_USERNAME || 'postgres';
-const DB_PASSWORD = process.env.DB_PASSWORD || 'postgresql';
+const DB_PASSWORD = process.env.DB_PASSWORD || 'postgres';
 const DB_NAME = process.env.DB_NAME || 'user_management';
 
 async function createManagerComplete() {

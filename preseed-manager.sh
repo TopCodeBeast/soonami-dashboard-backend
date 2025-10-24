@@ -129,10 +129,10 @@ async function createManager() {
         console.log(`Running on: ${os}`);
         
         // Read environment variables
-        const dbHost = process.env.DB_HOST || 'localhost';
-        const dbPort = process.env.DB_PORT || 5432;
+        const dbHost = process.env.DB_HOST || '127.0.0.1';
+        const dbPort = process.env.DB_PORT || 5433;
         const dbUsername = process.env.DB_USERNAME || 'postgres';
-        const dbPassword = process.env.DB_PASSWORD || 'postgresql';
+        const dbPassword = process.env.DB_PASSWORD || 'postgres';
         const dbName = process.env.DB_NAME || 'user_management';
         
         // Get manager credentials from environment or use defaults
