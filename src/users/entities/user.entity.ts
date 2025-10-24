@@ -9,6 +9,7 @@ import {
 import { Wallet } from '../../wallets/entities/wallet.entity';
 
 export enum UserRole {
+  MANAGER = 'manager',
   ADMIN = 'admin',
   USER = 'user',
 }

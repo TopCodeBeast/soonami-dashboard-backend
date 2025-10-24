@@ -9,6 +9,7 @@ import { Repository } from 'typeorm';
 import { Wallet } from './entities/wallet.entity';
 import { User, UserRole } from '../users/entities/user.entity';
 import { CreateWalletDto, UpdateWalletDto } from './dto/wallet.dto';
+import { RoleHierarchy } from '../users/utils/role-hierarchy';
 
 @Injectable()
 export class WalletsService {
@@ -20,8 +21,8 @@ export class WalletsService {
   ) {}
 
   async create(createWalletDto: CreateWalletDto, userId: string, currentUserRole: UserRole) {
-    // Users can only add wallets to their own account, admins can add to any account
-    if (currentUserRole !== UserRole.ADMIN) {
+    // Users can only add wallets to their own account, managers and admins can add to any account
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole)) {
       const user = await this.userRepository.findOne({ where: { id: userId } });
       if (!user) {
         throw new NotFoundException('User not found');
@@ -46,8 +47,8 @@ export class WalletsService {
   }
 
   async findAll(userId: string, currentUserId: string, currentUserRole: UserRole) {
-    // Users can only view their own wallets, admins can view any user's wallets
-    if (currentUserRole !== UserRole.ADMIN && currentUserId !== userId) {
+    // Users can only view their own wallets, managers and admins can view any user's wallets
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole) && currentUserId !== userId) {
       throw new ForbiddenException('You can only view your own wallets');
     }
 
@@ -67,8 +68,8 @@ export class WalletsService {
       throw new NotFoundException('Wallet not found');
     }
 
-    // Users can only view their own wallets, admins can view any wallet
-    if (currentUserRole !== UserRole.ADMIN && wallet.userId !== currentUserId) {
+    // Users can only view their own wallets, managers and admins can view any wallet
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole) && wallet.userId !== currentUserId) {
       throw new ForbiddenException('You can only view your own wallets');
     }
 
@@ -89,8 +90,8 @@ export class WalletsService {
       throw new NotFoundException('Wallet not found');
     }
 
-    // Users can only update their own wallets, admins can update any wallet
-    if (currentUserRole !== UserRole.ADMIN && wallet.userId !== currentUserId) {
+    // Users can only update their own wallets, managers and admins can update any wallet
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole) && wallet.userId !== currentUserId) {
       throw new ForbiddenException('You can only update your own wallets');
     }
 
@@ -107,8 +108,8 @@ export class WalletsService {
       throw new NotFoundException('Wallet not found');
     }
 
-    // Users can only delete their own wallets, admins can delete any wallet
-    if (currentUserRole !== UserRole.ADMIN && wallet.userId !== currentUserId) {
+    // Users can only delete their own wallets, managers and admins can delete any wallet
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole) && wallet.userId !== currentUserId) {
       throw new ForbiddenException('You can only delete your own wallets');
     }
 

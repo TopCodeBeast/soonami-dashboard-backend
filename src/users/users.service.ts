@@ -9,6 +9,7 @@ import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User, UserRole } from './entities/user.entity';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
+import { RoleHierarchy } from './utils/role-hierarchy';
 
 @Injectable()
 export class UsersService {
@@ -18,9 +19,14 @@ export class UsersService {
   ) {}
 
   async create(createUserDto: CreateUserDto, currentUserRole: UserRole) {
-    // Only admins can create users
-    if (currentUserRole !== UserRole.ADMIN) {
-      throw new ForbiddenException('Only admins can create users');
+    // Only managers and admins can create users
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole)) {
+      throw new ForbiddenException('Only managers and admins can create users');
+    }
+
+    // Check if current user can assign the requested role
+    if (createUserDto.role && !RoleHierarchy.canManageRole(currentUserRole, createUserDto.role)) {
+      throw new ForbiddenException(`You cannot assign the role: ${createUserDto.role}`);
     }
 
     const existingUser = await this.userRepository.findOne({
@@ -47,9 +53,9 @@ export class UsersService {
   }
 
   async findAll(currentUserRole: UserRole) {
-    // Only admins can view all users
-    if (currentUserRole !== UserRole.ADMIN) {
-      throw new ForbiddenException('Only admins can view all users');
+    // Only managers and admins can view all users
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole)) {
+      throw new ForbiddenException('Only managers and admins can view all users');
     }
 
     const users = await this.userRepository.find({
@@ -61,8 +67,8 @@ export class UsersService {
   }
 
   async findOne(id: string, currentUserId: string, currentUserRole: UserRole) {
-    // Users can only view their own profile, admins can view any user
-    if (currentUserRole !== UserRole.ADMIN && currentUserId !== id) {
+    // Users can only view their own profile, managers and admins can view any user
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole) && currentUserId !== id) {
       throw new ForbiddenException('You can only view your own profile');
     }
 
@@ -85,19 +91,27 @@ export class UsersService {
     currentUserId: string,
     currentUserRole: UserRole,
   ) {
-    // Users can only update their own profile (except role), admins can update any user
-    if (currentUserRole !== UserRole.ADMIN && currentUserId !== id) {
+    // Users can only update their own profile (except role), managers and admins can update any user
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole) && currentUserId !== id) {
       throw new ForbiddenException('You can only update your own profile');
     }
 
-    // Only admins can change roles
-    if (updateUserDto.role && currentUserRole !== UserRole.ADMIN) {
-      throw new ForbiddenException('Only admins can change user roles');
+    // Get the target user to check their current role
+    const targetUser = await this.userRepository.findOne({ where: { id } });
+    if (!targetUser) {
+      throw new NotFoundException('User not found');
     }
 
-    const user = await this.userRepository.findOne({ where: { id } });
-    if (!user) {
-      throw new NotFoundException('User not found');
+    // Check if current user can change roles
+    if (updateUserDto.role) {
+      if (!RoleHierarchy.canManageRole(currentUserRole, updateUserDto.role)) {
+        throw new ForbiddenException(`You cannot assign the role: ${updateUserDto.role}`);
+      }
+      
+      // Prevent users from changing their own role to a higher level
+      if (currentUserId === id && !RoleHierarchy.canManageRole(currentUserRole, updateUserDto.role)) {
+        throw new ForbiddenException('You cannot change your own role');
+      }
     }
 
     // Hash password if provided
@@ -113,9 +127,9 @@ export class UsersService {
   }
 
   async remove(id: string, currentUserId: string, currentUserRole: UserRole) {
-    // Only admins can delete users
-    if (currentUserRole !== UserRole.ADMIN) {
-      throw new ForbiddenException('Only admins can delete users');
+    // Only managers and admins can delete users
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole)) {
+      throw new ForbiddenException('Only managers and admins can delete users');
     }
 
     // Prevent self-deletion
@@ -126,6 +140,11 @@ export class UsersService {
     const user = await this.userRepository.findOne({ where: { id } });
     if (!user) {
       throw new NotFoundException('User not found');
+    }
+
+    // Check if current user can delete this user based on role hierarchy
+    if (!RoleHierarchy.canManageRole(currentUserRole, user.role)) {
+      throw new ForbiddenException(`You cannot delete users with role: ${user.role}`);
     }
 
     await this.userRepository.remove(user);
