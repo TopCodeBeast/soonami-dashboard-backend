@@ -70,7 +70,7 @@ async function listManagers() {
                 email,
                 name,
                 role,
-                "isActive",
+                isActive,
                 "lastLoginAt",
                 "createdAt",
                 "updatedAt"

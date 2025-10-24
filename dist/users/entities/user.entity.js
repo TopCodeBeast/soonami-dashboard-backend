@@ -14,6 +14,7 @@ const typeorm_1 = require("typeorm");
 const wallet_entity_1 = require("../../wallets/entities/wallet.entity");
 var UserRole;
 (function (UserRole) {
+    UserRole["MANAGER"] = "manager";
     UserRole["ADMIN"] = "admin";
     UserRole["USER"] = "user";
 })(UserRole || (exports.UserRole = UserRole = {}));
