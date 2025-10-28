@@ -152,6 +152,17 @@ export class UsersService {
   }
 
   async getProfile(currentUserId: string) {
-    return this.findOne(currentUserId, currentUserId, UserRole.ADMIN);
+    const user = await this.userRepository.findOne({
+      where: { id: currentUserId },
+      relations: ['wallets'],
+      select: ['id', 'name', 'email', 'gem', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt'],
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    console.log(`✅ Profile fetched for user ${currentUserId} with ${user.wallets?.length || 0} wallets`);
+    return user;
   }
 }
