@@ -11,6 +11,7 @@ export declare class AuthController {
             name: any;
             email: any;
             role: any;
+            gem: any;
             wallets: any;
         };
     }>;

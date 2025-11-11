@@ -64,6 +64,7 @@ export class AuthService {
         name: user.name,
         email: user.email,
         role: user.role,
+        gem: user.gem,
         wallets: user.wallets,
       },
     };

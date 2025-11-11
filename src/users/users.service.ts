@@ -60,7 +60,7 @@ export class UsersService {
 
     const users = await this.userRepository.find({
       relations: ['wallets'],
-      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt'],
+      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt', 'gem'],
     });
 
     return users;
@@ -75,7 +75,7 @@ export class UsersService {
     const user = await this.userRepository.findOne({
       where: { id },
       relations: ['wallets'],
-      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt'],
+      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt', 'gem'],
     });
 
     if (!user) {

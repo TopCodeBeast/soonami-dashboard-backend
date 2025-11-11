@@ -15,6 +15,7 @@ export declare class AuthService {
             name: any;
             email: any;
             role: any;
+            gem: any;
             wallets: any;
         };
     }>;
