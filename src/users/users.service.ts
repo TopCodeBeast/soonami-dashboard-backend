@@ -5,19 +5,25 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, MoreThan } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User, UserRole } from './entities/user.entity';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 import { RoleHierarchy } from './utils/role-hierarchy';
 import { GemTransactionsService } from './gem-transactions.service';
 import { GemTransactionType } from './entities/gem-transaction.entity';
+import { Wallet } from '../wallets/entities/wallet.entity';
+import { GemTransaction } from './entities/gem-transaction.entity';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Wallet)
+    private readonly walletRepository: Repository<Wallet>,
+    @InjectRepository(GemTransaction)
+    private readonly gemTransactionRepository: Repository<GemTransaction>,
     private readonly gemTransactionsService: GemTransactionsService,
   ) {}
 
@@ -131,8 +137,8 @@ export class UsersService {
 
     if (Object.prototype.hasOwnProperty.call(updateUserDto, 'gem') && typeof updateUserDto.gem === 'number') {
       gemChange = updateUserDto.gem - (targetUser.gem || 0);
-      gemReason = (updateUserDto as any).gemTransactionReason;
-      gemMetadata = (updateUserDto as any).gemTransactionMetadata;
+      gemReason = updateUserDto.gemTransactionReason;
+      gemMetadata = updateUserDto.gemTransactionMetadata;
     }
 
     await this.userRepository.update(id, updateUserDto);
@@ -230,5 +236,264 @@ export class UsersService {
     }
 
     return this.gemTransactionsService.getRecentTransactions(params);
+  }
+
+  async getRecentActivities(limit = 20, currentUserRole: UserRole) {
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole)) {
+      throw new ForbiddenException('Only managers and admins can view recent activities');
+    }
+
+    const activities: Array<{
+      type: 'user_registered' | 'user_login' | 'wallet_added' | 'gem_transaction';
+      action: string;
+      user: { id: string; email: string; name?: string };
+      timestamp: Date;
+    }> = [];
+
+    // Get recent user registrations (last 7 days)
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const recentUsers = await this.userRepository.find({
+      where: {
+        createdAt: MoreThan(sevenDaysAgo),
+      },
+      select: ['id', 'email', 'name', 'createdAt'],
+      order: { createdAt: 'DESC' },
+      take: limit,
+    });
+
+    recentUsers.forEach((user) => {
+      activities.push({
+        type: 'user_registered',
+        action: 'New user registered',
+        user: { id: user.id, email: user.email, name: user.name },
+        timestamp: user.createdAt,
+      });
+    });
+
+    // Get recent logins (last 7 days, excluding today's registrations)
+    const recentLogins = await this.userRepository.find({
+      where: {
+        lastLoginAt: MoreThan(sevenDaysAgo),
+      },
+      select: ['id', 'email', 'name', 'lastLoginAt'],
+      order: { lastLoginAt: 'DESC' },
+      take: limit,
+    });
+
+    recentLogins.forEach((user) => {
+      // Only add if it's not a same-day registration
+      const isSameDayRegistration = recentUsers.some(
+        (u) => u.id === user.id && 
+        u.createdAt.toDateString() === user.lastLoginAt?.toDateString()
+      );
+      
+      if (!isSameDayRegistration && user.lastLoginAt) {
+        activities.push({
+          type: 'user_login',
+          action: 'User logged in',
+          user: { id: user.id, email: user.email, name: user.name },
+          timestamp: user.lastLoginAt,
+        });
+      }
+    });
+
+    // Get recent wallet additions (last 7 days)
+    const recentWallets = await this.walletRepository.find({
+      where: {
+        createdAt: MoreThan(sevenDaysAgo),
+      },
+      relations: ['user'],
+      select: {
+        id: true,
+        createdAt: true,
+        user: {
+          id: true,
+          email: true,
+          name: true,
+        },
+      },
+      order: { createdAt: 'DESC' },
+      take: limit,
+    });
+
+    recentWallets.forEach((wallet) => {
+      if (wallet.user) {
+        activities.push({
+          type: 'wallet_added',
+          action: 'Wallet added',
+          user: { id: wallet.user.id, email: wallet.user.email, name: wallet.user.name },
+          timestamp: wallet.createdAt,
+        });
+      }
+    });
+
+    // Get recent gem transactions (last 7 days)
+    const recentTransactions = await this.gemTransactionRepository.find({
+      where: {
+        createdAt: MoreThan(sevenDaysAgo),
+      },
+      relations: ['user'],
+      select: {
+        id: true,
+        type: true,
+        change: true,
+        reason: true,
+        createdAt: true,
+        user: {
+          id: true,
+          email: true,
+          name: true,
+        },
+      },
+      order: { createdAt: 'DESC' },
+      take: limit,
+    });
+
+    recentTransactions.forEach((transaction) => {
+      if (transaction.user) {
+        const action = transaction.type === GemTransactionType.EARN
+          ? `Gem purchase: +${Math.abs(transaction.change)} gems`
+          : `Gem spent: -${Math.abs(transaction.change)} gems`;
+        
+        activities.push({
+          type: 'gem_transaction',
+          action: transaction.reason || action,
+          user: { id: transaction.user.id, email: transaction.user.email, name: transaction.user.name },
+          timestamp: transaction.createdAt,
+        });
+      }
+    });
+
+    // Sort all activities by timestamp (most recent first) and limit
+    activities.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+    
+    return activities.slice(0, limit);
+  }
+
+  async getLoginActivity(days: number = 7, currentUserRole: UserRole) {
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole)) {
+      throw new ForbiddenException('Only managers and admins can view login activity');
+    }
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    startDate.setHours(0, 0, 0, 0);
+
+    // Get logins grouped by date
+    const logins = await this.userRepository
+      .createQueryBuilder('user')
+      .select("DATE_TRUNC('day', user.lastLoginAt)", 'date')
+      .addSelect('COUNT(*)', 'count')
+      .where('user.lastLoginAt >= :startDate', { startDate })
+      .andWhere('user.lastLoginAt IS NOT NULL')
+      .groupBy("DATE_TRUNC('day', user.lastLoginAt)")
+      .orderBy("DATE_TRUNC('day', user.lastLoginAt)", 'ASC')
+      .getRawMany<{ date: Date; count: string }>();
+
+    // Generate all dates in the range and fill in missing dates with 0
+    const activityMap = new Map<string, number>();
+    const endDate = new Date();
+    
+    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      const dateKey = d.toISOString().split('T')[0];
+      activityMap.set(dateKey, 0);
+    }
+
+    // Fill in actual counts
+    logins.forEach((login) => {
+      const dateKey = new Date(login.date).toISOString().split('T')[0];
+      activityMap.set(dateKey, parseInt(login.count, 10));
+    });
+
+    // Convert to array format
+    return Array.from(activityMap.entries())
+      .map(([date, count]) => ({
+        date,
+        count,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  async getRegistrationActivity(days: number = 7, currentUserRole: UserRole) {
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole)) {
+      throw new ForbiddenException('Only managers and admins can view registration activity');
+    }
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    startDate.setHours(0, 0, 0, 0);
+
+    // Get registrations grouped by date
+    const registrations = await this.userRepository
+      .createQueryBuilder('user')
+      .select("DATE_TRUNC('day', user.createdAt)", 'date')
+      .addSelect('COUNT(*)', 'count')
+      .where('user.createdAt >= :startDate', { startDate })
+      .groupBy("DATE_TRUNC('day', user.createdAt)")
+      .orderBy("DATE_TRUNC('day', user.createdAt)", 'ASC')
+      .getRawMany<{ date: Date; count: string }>();
+
+    // Generate all dates in the range and fill in missing dates with 0
+    const activityMap = new Map<string, number>();
+    const endDate = new Date();
+    
+    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      const dateKey = d.toISOString().split('T')[0];
+      activityMap.set(dateKey, 0);
+    }
+
+    // Fill in actual counts
+    registrations.forEach((registration) => {
+      const dateKey = new Date(registration.date).toISOString().split('T')[0];
+      activityMap.set(dateKey, parseInt(registration.count, 10));
+    });
+
+    // Convert to array format
+    return Array.from(activityMap.entries())
+      .map(([date, count]) => ({
+        date,
+        count,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  async getDashboardStats(currentUserRole: UserRole) {
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole)) {
+      throw new ForbiddenException('Only managers and admins can view dashboard stats');
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Total Users - count all users
+    const totalUsers = await this.userRepository.count();
+
+    // Active Users - count users with isActive = true
+    const activeUsers = await this.userRepository.count({
+      where: { isActive: true },
+    });
+
+    // New Users Today - count users created today
+    const newUsersToday = await this.userRepository.count({
+      where: {
+        createdAt: MoreThan(today),
+      },
+    });
+
+    // Logins Today - count users who logged in today
+    const loginsToday = await this.userRepository.count({
+      where: {
+        lastLoginAt: MoreThan(today),
+      },
+    });
+
+    return {
+      totalUsers,
+      activeUsers,
+      newUsersToday,
+      loginsToday,
+    };
   }
 }

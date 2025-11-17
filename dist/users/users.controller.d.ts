@@ -40,6 +40,30 @@ export declare class UsersController {
         rank: number;
     }[]>;
     getGemTransactions(userId: string, type: string, limit: number, req: any): Promise<import("./entities/gem-transaction.entity").GemTransaction[]>;
+    getRecentActivities(limit: number, req: any): Promise<{
+        type: "user_registered" | "user_login" | "wallet_added" | "gem_transaction";
+        action: string;
+        user: {
+            id: string;
+            email: string;
+            name?: string;
+        };
+        timestamp: Date;
+    }[]>;
+    getLoginActivity(days: number, req: any): Promise<{
+        date: string;
+        count: number;
+    }[]>;
+    getRegistrationActivity(days: number, req: any): Promise<{
+        date: string;
+        count: number;
+    }[]>;
+    getDashboardStats(req: any): Promise<{
+        totalUsers: number;
+        activeUsers: number;
+        newUsersToday: number;
+        loginsToday: number;
+    }>;
     remove(id: string, req: any): Promise<{
         message: string;
     }>;

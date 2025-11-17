@@ -104,6 +104,49 @@ export class UsersController {
     }, req.user.userId, req.user.role);
   }
 
+  @Get('activities/recent')
+  @ApiOperation({ summary: 'Get recent activities (Admin/Manager only)' })
+  @ApiResponse({ status: 200, description: 'Recent activities retrieved successfully' })
+  async getRecentActivities(
+    @Query('limit') limit = 20,
+    @Request() req: any,
+  ) {
+    return this.usersService.getRecentActivities(Number(limit) || 20, req.user.role);
+  }
+
+  @Get('activities/login')
+  @ApiOperation({ summary: 'Get login activity chart data (Admin/Manager only)' })
+  @ApiResponse({ status: 200, description: 'Login activity retrieved successfully' })
+  async getLoginActivity(
+    @Query('days') days = 7,
+    @Request() req: any,
+  ) {
+    const daysNum = Number(days) || 7;
+    // Ensure valid range (7, 30, or 90 days)
+    const validDays = daysNum === 30 ? 30 : daysNum === 90 ? 90 : 7;
+    return this.usersService.getLoginActivity(validDays, req.user.role);
+  }
+
+  @Get('activities/registration')
+  @ApiOperation({ summary: 'Get registration activity chart data (Admin/Manager only)' })
+  @ApiResponse({ status: 200, description: 'Registration activity retrieved successfully' })
+  async getRegistrationActivity(
+    @Query('days') days = 7,
+    @Request() req: any,
+  ) {
+    const daysNum = Number(days) || 7;
+    // Ensure valid range (7, 30, or 90 days)
+    const validDays = daysNum === 30 ? 30 : daysNum === 90 ? 90 : 7;
+    return this.usersService.getRegistrationActivity(validDays, req.user.role);
+  }
+
+  @Get('stats/dashboard')
+  @ApiOperation({ summary: 'Get dashboard statistics (Admin/Manager only)' })
+  @ApiResponse({ status: 200, description: 'Dashboard statistics retrieved successfully' })
+  async getDashboardStats(@Request() req: any) {
+    return this.usersService.getDashboardStats(req.user.role);
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Delete user (Admin only)' })
   @ApiResponse({ status: 200, description: 'User deleted successfully' })

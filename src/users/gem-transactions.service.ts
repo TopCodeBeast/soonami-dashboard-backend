@@ -76,7 +76,7 @@ export class GemTransactionsService {
       .addSelect('SUM(ABS(transaction.change))', 'totalSpent')
       .where('transaction.type = :type', { type: GemTransactionType.SPEND })
       .groupBy('transaction.userId')
-      .orderBy('totalSpent', 'DESC')
+      .orderBy('SUM(ABS(transaction.change))', 'DESC')
       .limit(limit)
       .getRawMany<{ userId: string; totalSpent: string }>();
 

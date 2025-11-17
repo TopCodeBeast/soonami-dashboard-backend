@@ -16,6 +16,8 @@ export declare class UpdateUserDto {
     password?: string;
     role?: UserRole;
     isActive?: boolean;
+    gemTransactionReason?: string;
+    gemTransactionMetadata?: string;
 }
 export declare class UserResponseDto {
     id: string;

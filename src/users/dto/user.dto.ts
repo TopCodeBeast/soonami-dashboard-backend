@@ -90,6 +90,24 @@ export class UpdateUserDto {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+
+  @ApiProperty({
+    example: 'Store purchase: Premium Boost',
+    required: false,
+    description: 'Reason for gem balance change, used for transaction history',
+  })
+  @IsOptional()
+  @IsString()
+  gemTransactionReason?: string;
+
+  @ApiProperty({
+    example: '{"item_id":"premium-boost","cost":5}',
+    required: false,
+    description: 'Metadata for gem transaction (stored as stringified JSON)',
+  })
+  @IsOptional()
+  @IsString()
+  gemTransactionMetadata?: string;
 }
 
 export class UserResponseDto {

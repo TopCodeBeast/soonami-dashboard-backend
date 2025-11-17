@@ -111,6 +111,26 @@ __decorate([
     (0, class_validator_1.IsOptional)(),
     __metadata("design:type", Boolean)
 ], UpdateUserDto.prototype, "isActive", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: 'Store purchase: Premium Boost',
+        required: false,
+        description: 'Reason for gem balance change, used for transaction history',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateUserDto.prototype, "gemTransactionReason", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: '{"item_id":"premium-boost","cost":5}',
+        required: false,
+        description: 'Metadata for gem transaction (stored as stringified JSON)',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    __metadata("design:type", String)
+], UpdateUserDto.prototype, "gemTransactionMetadata", void 0);
 class UserResponseDto {
 }
 exports.UserResponseDto = UserResponseDto;
