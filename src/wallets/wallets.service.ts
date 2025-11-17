@@ -54,6 +54,21 @@ export class WalletsService {
 
     return this.walletRepository.find({
       where: { userId },
+      relations: ['user'],
+      select: {
+        id: true,
+        address: true,
+        label: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+        userId: true,
+        user: {
+          id: true,
+          email: true,
+          name: true,
+        },
+      },
       order: { createdAt: 'DESC' },
     });
   }

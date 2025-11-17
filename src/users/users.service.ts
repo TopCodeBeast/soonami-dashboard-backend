@@ -5,7 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan } from 'typeorm';
+import { Repository, MoreThan, MoreThanOrEqual, LessThan } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User, UserRole } from './entities/user.entity';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
@@ -467,6 +467,9 @@ export class UsersService {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
     // Total Users - count all users
     const totalUsers = await this.userRepository.count();
 
@@ -475,19 +478,26 @@ export class UsersService {
       where: { isActive: true },
     });
 
-    // New Users Today - count users created today
-    const newUsersToday = await this.userRepository.count({
-      where: {
-        createdAt: MoreThan(today),
-      },
-    });
+    // New Users Today - count users created today (between today 00:00:00 and tomorrow 00:00:00)
+    const newUsersTodayQuery = this.userRepository
+      .createQueryBuilder('user')
+      .where('user.createdAt >= :today', { today })
+      .andWhere('user.createdAt < :tomorrow', { tomorrow })
+      .getCount();
 
-    // Logins Today - count users who logged in today
-    const loginsToday = await this.userRepository.count({
-      where: {
-        lastLoginAt: MoreThan(today),
-      },
-    });
+    // Logins Today - count users who logged in today (between today 00:00:00 and tomorrow 00:00:00)
+    // Note: lastLoginAt can be null, so we need to check for that
+    const loginsTodayQuery = this.userRepository
+      .createQueryBuilder('user')
+      .where('user.lastLoginAt >= :today', { today })
+      .andWhere('user.lastLoginAt < :tomorrow', { tomorrow })
+      .andWhere('user.lastLoginAt IS NOT NULL')
+      .getCount();
+
+    const [newUsersToday, loginsToday] = await Promise.all([
+      newUsersTodayQuery,
+      loginsTodayQuery,
+    ]);
 
     return {
       totalUsers,
