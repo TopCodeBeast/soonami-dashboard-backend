@@ -10,12 +10,15 @@ import * as bcrypt from 'bcryptjs';
 import { User, UserRole } from './entities/user.entity';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 import { RoleHierarchy } from './utils/role-hierarchy';
+import { GemTransactionsService } from './gem-transactions.service';
+import { GemTransactionType } from './entities/gem-transaction.entity';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
-    private userRepository: Repository<User>,
+    private readonly userRepository: Repository<User>,
+    private readonly gemTransactionsService: GemTransactionsService,
   ) {}
 
   async create(createUserDto: CreateUserDto, currentUserRole: UserRole) {
@@ -122,7 +125,25 @@ export class UsersService {
       );
     }
 
+    let gemChange: number | null = null;
+    let gemReason: string | undefined;
+    let gemMetadata: string | undefined;
+
+    if (Object.prototype.hasOwnProperty.call(updateUserDto, 'gem') && typeof updateUserDto.gem === 'number') {
+      gemChange = updateUserDto.gem - (targetUser.gem || 0);
+      gemReason = (updateUserDto as any).gemTransactionReason;
+      gemMetadata = (updateUserDto as any).gemTransactionMetadata;
+    }
+
     await this.userRepository.update(id, updateUserDto);
+
+    if (gemChange && gemChange !== 0) {
+      if (typeof updateUserDto.gem === 'number') {
+        targetUser.gem = updateUserDto.gem;
+      }
+      await this.gemTransactionsService.recordTransaction(targetUser, gemChange, gemReason, gemMetadata);
+    }
+
     return this.findOne(id, currentUserId, currentUserRole);
   }
 
@@ -164,5 +185,50 @@ export class UsersService {
 
     console.log(`✅ Profile fetched for user ${currentUserId} with ${user.wallets?.length || 0} wallets`);
     return user;
+  }
+
+  async getTopGemHolders(limit = 10, currentUserRole: UserRole) {
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole)) {
+      throw new ForbiddenException('Only managers and admins can view gem leaderboards');
+    }
+
+    const users = await this.userRepository.find({
+      select: ['id', 'name', 'email', 'gem', 'role'],
+      order: { gem: 'DESC' },
+      take: limit,
+      where: { isActive: true },
+    });
+
+    return users.map((user, index) => ({
+      rank: index + 1,
+      ...user,
+    }));
+  }
+
+  async getTopGemSpenders(limit = 10, currentUserRole: UserRole) {
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole)) {
+      throw new ForbiddenException('Only managers and admins can view gem spenders leaderboard');
+    }
+
+    const spenders = await this.gemTransactionsService.getTopSpenders(limit);
+    return spenders.map((entry, index) => ({
+      rank: index + 1,
+      ...entry,
+    }));
+  }
+
+  async getGemTransactions(options: {
+    userId?: string;
+    type?: GemTransactionType;
+    limit?: number;
+  }, currentUserId: string, currentUserRole: UserRole) {
+    const params = { ...options };
+    params.limit = Math.min(Math.max(params.limit ?? 20, 1), 100);
+
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole)) {
+      params.userId = currentUserId;
+    }
+
+    return this.gemTransactionsService.getRecentTransactions(params);
   }
 }

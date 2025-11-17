@@ -6,6 +6,8 @@ export declare class CreateUserDto {
     password: string;
     role?: UserRole;
     isActive?: boolean;
+    gemTransactionReason?: string;
+    gemTransactionMetadata?: string;
 }
 export declare class UpdateUserDto {
     email?: string;

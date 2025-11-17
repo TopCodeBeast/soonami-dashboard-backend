@@ -8,6 +8,7 @@ import { WalletsModule } from './wallets/wallets.module';
 import { DatabaseSeederModule } from './database-seeder/database-seeder.module';
 import { User } from './users/entities/user.entity';
 import { Wallet } from './wallets/entities/wallet.entity';
+import { GemTransaction } from './users/entities/gem-transaction.entity';
 
 @Module({
   imports: [
@@ -27,7 +28,7 @@ import { Wallet } from './wallets/entities/wallet.entity';
       username: process.env.DB_USERNAME || 'postgres',
       password: process.env.DB_PASSWORD,
       database: process.env.DB_NAME || 'user_management',
-      entities: [User, Wallet],
+      entities: [User, Wallet, GemTransaction],
       synchronize: process.env.NODE_ENV === 'development',
       logging: process.env.NODE_ENV === 'development',
     }),

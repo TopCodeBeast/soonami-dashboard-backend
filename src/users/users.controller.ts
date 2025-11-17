@@ -8,11 +8,13 @@ import {
   Delete,
   UseGuards,
   Request,
+  Query,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { GemTransactionType } from './entities/gem-transaction.entity';
 
 @ApiTags('Users')
 @Controller('users')
@@ -65,6 +67,41 @@ export class UsersController {
     @Request() req: any,
   ) {
     return this.usersService.update(id, updateUserDto, req.user.userId, req.user.role);
+  }
+
+  @Get('leaderboard/gems/holders')
+  @ApiOperation({ summary: 'Top gem holders' })
+  @ApiResponse({ status: 200, description: 'Gem holders retrieved successfully' })
+  async getTopGemHolders(@Query('limit') limit = 10, @Request() req: any) {
+    return this.usersService.getTopGemHolders(Number(limit) || 10, req.user.role);
+  }
+
+  @Get('leaderboard/gems/spenders')
+  @ApiOperation({ summary: 'Top gem spenders' })
+  @ApiResponse({ status: 200, description: 'Gem spenders retrieved successfully' })
+  async getTopGemSpenders(@Query('limit') limit = 10, @Request() req: any) {
+    return this.usersService.getTopGemSpenders(Number(limit) || 10, req.user.role);
+  }
+
+  @Get('gems/history')
+  @ApiOperation({ summary: 'Gem transaction history' })
+  @ApiResponse({ status: 200, description: 'Gem transactions retrieved successfully' })
+  async getGemTransactions(
+    @Query('userId') userId: string,
+    @Query('type') type: string,
+    @Query('limit') limit = 20,
+    @Request() req: any,
+  ) {
+    const normalizedType =
+      type && Object.values(GemTransactionType).includes(type as GemTransactionType)
+        ? (type as GemTransactionType)
+        : undefined;
+
+    return this.usersService.getGemTransactions({
+      userId,
+      type: normalizedType,
+      limit: Number(limit) || 20,
+    }, req.user.userId, req.user.role);
   }
 
   @Delete(':id')

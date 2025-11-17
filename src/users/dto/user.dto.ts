@@ -1,4 +1,12 @@
-import { IsEmail, IsString, MinLength, IsOptional, IsEnum, IsBoolean, IsNumber } from 'class-validator';
+import {
+  IsEmail,
+  IsString,
+  MinLength,
+  IsOptional,
+  IsEnum,
+  IsBoolean,
+  IsNumber,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { UserRole } from '../entities/user.entity';
 
@@ -31,6 +39,24 @@ export class CreateUserDto {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+
+  @ApiProperty({
+    example: 'Gem purchase checkout',
+    required: false,
+    description: 'Reason for gem balance change, used for transaction history',
+  })
+  @IsOptional()
+  @IsString()
+  gemTransactionReason?: string;
+
+  @ApiProperty({
+    example: '{"source":"python_backend","itemId":"premium-boost"}',
+    required: false,
+    description: 'Metadata for gem transaction (stored as stringified JSON)',
+  })
+  @IsOptional()
+  @IsString()
+  gemTransactionMetadata?: string;
 }
 
 export class UpdateUserDto {
