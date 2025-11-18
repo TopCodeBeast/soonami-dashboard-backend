@@ -9,9 +9,54 @@ var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ChangePasswordDto = exports.RefreshTokenDto = exports.RegisterDto = exports.LoginDto = void 0;
+exports.ChangePasswordDto = exports.RefreshTokenDto = exports.RegisterDto = exports.LoginDto = exports.DirectLoginDto = exports.CheckUserDto = exports.VerifyCodeDto = exports.RequestCodeDto = void 0;
 const class_validator_1 = require("class-validator");
 const swagger_1 = require("@nestjs/swagger");
+class RequestCodeDto {
+}
+exports.RequestCodeDto = RequestCodeDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'user@example.com' }),
+    (0, class_validator_1.IsEmail)(),
+    __metadata("design:type", String)
+], RequestCodeDto.prototype, "email", void 0);
+class VerifyCodeDto {
+}
+exports.VerifyCodeDto = VerifyCodeDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'user@example.com' }),
+    (0, class_validator_1.IsEmail)(),
+    __metadata("design:type", String)
+], VerifyCodeDto.prototype, "email", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: '123456' }),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.Length)(6, 6),
+    __metadata("design:type", String)
+], VerifyCodeDto.prototype, "code", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'John Doe', required: false }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MinLength)(1),
+    __metadata("design:type", String)
+], VerifyCodeDto.prototype, "name", void 0);
+class CheckUserDto {
+}
+exports.CheckUserDto = CheckUserDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'user@example.com' }),
+    (0, class_validator_1.IsEmail)(),
+    __metadata("design:type", String)
+], CheckUserDto.prototype, "email", void 0);
+class DirectLoginDto {
+}
+exports.DirectLoginDto = DirectLoginDto;
+__decorate([
+    (0, swagger_1.ApiProperty)({ example: 'admin@example.com' }),
+    (0, class_validator_1.IsEmail)(),
+    __metadata("design:type", String)
+], DirectLoginDto.prototype, "email", void 0);
 class LoginDto {
 }
 exports.LoginDto = LoginDto;

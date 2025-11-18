@@ -9,7 +9,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User, UserRole } from '../users/entities/user.entity';
-import { LoginDto, RegisterDto, ChangePasswordDto } from './dto/auth.dto';
+import { LoginDto, RegisterDto, ChangePasswordDto, RequestCodeDto, VerifyCodeDto, CheckUserDto } from './dto/auth.dto';
+import { EmailService } from './services/email.service';
+import { CodeStorageService } from './services/code-storage.service';
 
 @Injectable()
 export class AuthService {
@@ -17,6 +19,8 @@ export class AuthService {
     @InjectRepository(User)
     private userRepository: Repository<User>,
     private jwtService: JwtService,
+    private emailService: EmailService,
+    private codeStorageService: CodeStorageService,
   ) {}
 
   async validateUser(email: string, password: string): Promise<any> {
@@ -133,6 +137,10 @@ export class AuthService {
       throw new BadRequestException('User not found');
     }
 
+    if (!user.password) {
+      throw new BadRequestException('Password not set for this account');
+    }
+
     const isCurrentPasswordValid = await bcrypt.compare(
       changePasswordDto.currentPassword,
       user.password,
@@ -152,5 +160,186 @@ export class AuthService {
     });
 
     return { message: 'Password changed successfully' };
+  }
+
+  async requestCode(requestCodeDto: RequestCodeDto) {
+    const email = requestCodeDto.email.toLowerCase().trim();
+    
+    // Generate and store code
+    const code = this.codeStorageService.storeCode(email);
+    
+    // Send code via email
+    const emailSent = await this.emailService.sendVerificationCode(email, code);
+    
+    if (!emailSent) {
+      // In development, we still return success even if email fails
+      // The code will be logged
+    }
+    
+    return { message: 'Verification code sent to your email' };
+  }
+
+  async verifyCode(verifyCodeDto: VerifyCodeDto) {
+    const email = verifyCodeDto.email.toLowerCase().trim();
+    const code = verifyCodeDto.code.trim();
+    const name = verifyCodeDto.name?.trim();
+    
+    // Verify code
+    if (!this.codeStorageService.verifyCode(email, code)) {
+      throw new UnauthorizedException('Invalid or expired verification code');
+    }
+    
+    // Check if user exists
+    const existingUser = await this.userRepository.findOne({
+      where: { email },
+      relations: ['wallets'],
+    });
+    
+    const isFirstLogin = !existingUser;
+    
+    if (isFirstLogin) {
+      // First-time login - need name to create user
+      if (!name || name.length < 1 || name.length > 100) {
+        throw new BadRequestException(
+          'Name is required for first-time registration (1-100 characters)',
+        );
+      }
+      
+      // Create user without password
+      const user = this.userRepository.create({
+        email,
+        name,
+        gem: 0,
+        password: null, // No password needed
+        role: UserRole.USER,
+        isActive: true,
+      });
+      
+      const savedUser = await this.userRepository.save(user);
+      
+      // Update last login
+      await this.userRepository.update(savedUser.id, { lastLoginAt: new Date() });
+      
+      const payload = { email: savedUser.email, sub: savedUser.id, role: savedUser.role };
+      const accessToken = this.jwtService.sign(payload, {
+        secret: process.env.JWT_SECRET,
+        expiresIn: process.env.JWT_EXPIRES_IN || '15m',
+      });
+      
+      const refreshToken = this.jwtService.sign(payload, {
+        secret: process.env.JWT_REFRESH_SECRET,
+        expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
+      });
+      
+      const { password, ...userResult } = savedUser;
+      
+      return {
+        accessToken,
+        refreshToken,
+        user: {
+          ...userResult,
+          wallets: savedUser.wallets || [],
+        },
+        isFirstLogin: true,
+      };
+    } else {
+      // Existing user - just login
+      if (!existingUser.isActive) {
+        throw new UnauthorizedException('Account is deactivated');
+      }
+      
+      // Update last login
+      await this.userRepository.update(existingUser.id, { lastLoginAt: new Date() });
+      
+      const payload = { email: existingUser.email, sub: existingUser.id, role: existingUser.role };
+      const accessToken = this.jwtService.sign(payload, {
+        secret: process.env.JWT_SECRET,
+        expiresIn: process.env.JWT_EXPIRES_IN || '15m',
+      });
+      
+      const refreshToken = this.jwtService.sign(payload, {
+        secret: process.env.JWT_REFRESH_SECRET,
+        expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
+      });
+      
+      const { password, ...userResult } = existingUser;
+      
+      return {
+        accessToken,
+        refreshToken,
+        user: {
+          ...userResult,
+          wallets: existingUser.wallets || [],
+        },
+        isFirstLogin: false,
+      };
+    }
+  }
+
+  async checkUser(checkUserDto: CheckUserDto) {
+    const email = checkUserDto.email.toLowerCase().trim();
+    
+    const user = await this.userRepository.findOne({
+      where: { email },
+      select: ['id', 'email', 'name', 'role', 'isActive'],
+    });
+    
+    if (!user) {
+      return { exists: false };
+    }
+    
+    return {
+      exists: true,
+      role: user.role,
+      isActive: user.isActive,
+      name: user.name,
+    };
+  }
+
+  async directLoginForAdmin(email: string) {
+    const emailLower = email.toLowerCase().trim();
+    
+    const user = await this.userRepository.findOne({
+      where: { email: emailLower },
+      relations: ['wallets'],
+    });
+    
+    if (!user) {
+      throw new UnauthorizedException('User not found');
+    }
+    
+    if (!user.isActive) {
+      throw new UnauthorizedException('Account is deactivated');
+    }
+    
+    // Only allow direct login for admin and manager roles
+    if (user.role !== 'admin' && user.role !== 'manager') {
+      throw new UnauthorizedException('Direct login only available for administrators and managers');
+    }
+    
+    // Update last login
+    await this.userRepository.update(user.id, { lastLoginAt: new Date() });
+    
+    const payload = { email: user.email, sub: user.id, role: user.role };
+    const accessToken = this.jwtService.sign(payload, {
+      secret: process.env.JWT_SECRET,
+      expiresIn: process.env.JWT_EXPIRES_IN || '15m',
+    });
+    
+    const refreshToken = this.jwtService.sign(payload, {
+      secret: process.env.JWT_REFRESH_SECRET,
+      expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
+    });
+    
+    const { password, ...userResult } = user;
+    
+    return {
+      accessToken,
+      refreshToken,
+      user: {
+        ...userResult,
+        wallets: user.wallets || [],
+      },
+    };
   }
 }

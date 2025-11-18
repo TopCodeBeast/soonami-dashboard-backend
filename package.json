@@ -18,7 +18,9 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "db:update": "node update_database.js",
+    "db:verify": "node verify_database_schema.js"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",
@@ -30,6 +32,7 @@
     "@nestjs/swagger": "^7.1.17",
     "@nestjs/throttler": "^5.0.1",
     "@nestjs/typeorm": "^10.0.1",
+    "@types/nodemailer": "^7.0.4",
     "axios": "^1.12.2",
     "bcryptjs": "^2.4.3",
     "class-transformer": "^0.5.1",
@@ -38,6 +41,7 @@
     "cors": "^2.8.5",
     "express-rate-limit": "^7.1.5",
     "helmet": "^7.1.0",
+    "nodemailer": "^7.0.10",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "passport-local": "^1.0.0",

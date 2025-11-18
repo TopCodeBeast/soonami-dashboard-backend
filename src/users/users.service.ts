@@ -141,13 +141,22 @@ export class UsersService {
       gemMetadata = updateUserDto.gemTransactionMetadata;
     }
 
-    await this.userRepository.update(id, updateUserDto);
+    // Extract transaction fields before updating user (they're not part of User entity)
+    const { gemTransactionReason, gemTransactionMetadata, ...userUpdateData } = updateUserDto;
+    
+    await this.userRepository.update(id, userUpdateData);
 
     if (gemChange && gemChange !== 0) {
-      if (typeof updateUserDto.gem === 'number') {
-        targetUser.gem = updateUserDto.gem;
+      // Reload user to get updated gem value
+      const updatedUser = await this.userRepository.findOne({ where: { id } });
+      if (updatedUser) {
+        try {
+          await this.gemTransactionsService.recordTransaction(updatedUser, gemChange, gemReason, gemMetadata);
+        } catch (error) {
+          // Log error but don't fail the update if transaction recording fails
+          console.error('Failed to record gem transaction:', error);
+        }
       }
-      await this.gemTransactionsService.recordTransaction(targetUser, gemChange, gemReason, gemMetadata);
     }
 
     return this.findOne(id, currentUserId, currentUserRole);
