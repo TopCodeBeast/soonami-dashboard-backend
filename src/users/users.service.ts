@@ -232,6 +232,14 @@ export class UsersService {
     }));
   }
 
+  async getMostUsedItems(limit = 10, currentUserRole: UserRole) {
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole)) {
+      throw new ForbiddenException('Only managers and admins can view most used items');
+    }
+
+    return await this.gemTransactionsService.getMostUsedItems(limit);
+  }
+
   async getGemTransactions(options: {
     userId?: string;
     type?: GemTransactionType;

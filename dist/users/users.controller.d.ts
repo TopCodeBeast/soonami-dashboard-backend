@@ -39,6 +39,12 @@ export declare class UsersController {
         user: Pick<import("./entities/user.entity").User, "id" | "name" | "email" | "gem">;
         rank: number;
     }[]>;
+    getMostUsedItems(limit: number, req: any): Promise<{
+        itemId: string;
+        itemName: string;
+        purchaseCount: number;
+        totalGemsSpent: number;
+    }[]>;
     getGemTransactions(userId: string, type: string, limit: number, req: any): Promise<import("./entities/gem-transaction.entity").GemTransaction[]>;
     getRecentActivities(limit: number, req: any): Promise<{
         type: "user_registered" | "user_login" | "wallet_added" | "gem_transaction";

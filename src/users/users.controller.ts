@@ -83,6 +83,13 @@ export class UsersController {
     return this.usersService.getTopGemSpenders(Number(limit) || 10, req.user.role);
   }
 
+  @Get('analytics/most-used-items')
+  @ApiOperation({ summary: 'Get most used store items (Admin/Manager only)' })
+  @ApiResponse({ status: 200, description: 'Most used items retrieved successfully' })
+  async getMostUsedItems(@Query('limit') limit = 10, @Request() req: any) {
+    return this.usersService.getMostUsedItems(Number(limit) || 10, req.user.role);
+  }
+
   @Get('gems/history')
   @ApiOperation({ summary: 'Gem transaction history' })
   @ApiResponse({ status: 200, description: 'Gem transactions retrieved successfully' })

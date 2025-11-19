@@ -110,5 +110,69 @@ export class GemTransactionsService {
       user: Pick<User, 'id' | 'name' | 'email' | 'gem'>;
     }>;
   }
+
+  async getMostUsedItems(limit = 10): Promise<
+    Array<{
+      itemId: string;
+      itemName: string;
+      purchaseCount: number;
+      totalGemsSpent: number;
+    }>
+  > {
+    // Get all SPEND transactions with metadata
+    const transactions = await this.gemTransactionRepository.find({
+      where: { type: GemTransactionType.SPEND },
+      select: ['metadata', 'change'],
+    });
+
+    // Parse metadata and count items
+    const itemStats = new Map<
+      string,
+      { itemId: string; itemName: string; count: number; totalGems: number }
+    >();
+
+    for (const transaction of transactions) {
+      if (!transaction.metadata) continue;
+
+      try {
+        const metadata = JSON.parse(transaction.metadata);
+        const itemId = metadata.item_id;
+
+        if (itemId) {
+          const itemName = metadata.item_name || itemId;
+          const gemsSpent = Math.abs(transaction.change);
+
+          const existing = itemStats.get(itemId);
+          if (existing) {
+            existing.count += 1;
+            existing.totalGems += gemsSpent;
+          } else {
+            itemStats.set(itemId, {
+              itemId,
+              itemName,
+              count: 1,
+              totalGems: gemsSpent,
+            });
+          }
+        }
+      } catch (error) {
+        // Skip invalid JSON metadata
+        continue;
+      }
+    }
+
+    // Convert to array and sort by purchase count
+    const result = Array.from(itemStats.values())
+      .sort((a, b) => b.count - a.count)
+      .slice(0, limit)
+      .map((item) => ({
+        itemId: item.itemId,
+        itemName: item.itemName,
+        purchaseCount: item.count,
+        totalGemsSpent: item.totalGems,
+      }));
+
+    return result;
+  }
 }
 

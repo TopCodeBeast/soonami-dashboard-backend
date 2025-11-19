@@ -50,6 +50,12 @@ export declare class UsersService {
         user: Pick<User, "id" | "name" | "email" | "gem">;
         rank: number;
     }[]>;
+    getMostUsedItems(limit: number, currentUserRole: UserRole): Promise<{
+        itemId: string;
+        itemName: string;
+        purchaseCount: number;
+        totalGemsSpent: number;
+    }[]>;
     getGemTransactions(options: {
         userId?: string;
         type?: GemTransactionType;
