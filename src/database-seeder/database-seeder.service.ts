@@ -24,7 +24,6 @@ export class DatabaseSeederService implements OnModuleInit {
     try {
       const managerEmail = process.env.MANAGER_EMAIL || 'maxb47163@gmail.com';
       const managerName = process.env.MANAGER_NAME || 'System Manager';
-      const managerPassword = process.env.MANAGER_PASSWORD || 'manager123!@#';
 
       // Check if manager already exists
       const existingManager = await this.userRepository.findOne({
@@ -44,13 +43,11 @@ export class DatabaseSeederService implements OnModuleInit {
         return;
       }
 
-      // Create new manager user
-      const hashedPassword = await bcrypt.hash(managerPassword, 12);
-      
+      // Create new manager user without password (uses email code verification)
       const managerUser = this.userRepository.create({
         email: managerEmail,
         name: managerName,
-        password: hashedPassword,
+        password: null, // No password needed - uses email code verification
         role: UserRole.MANAGER,
         isActive: true,
         gem: 0,
@@ -60,7 +57,7 @@ export class DatabaseSeederService implements OnModuleInit {
       console.log(`✅ Manager user created: ${savedManager.email}`);
       console.log(`   ID: ${savedManager.id}`);
       console.log(`   Role: ${savedManager.role}`);
-      console.log(`   Password: ${managerPassword}`);
+      console.log(`   Password: None (email code verification only)`);
 
     } catch (error) {
       console.error('❌ Error seeding manager user:', error.message);
