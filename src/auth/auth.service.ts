@@ -243,9 +243,14 @@ export class AuthService {
         isFirstLogin: true,
       };
     } else {
-      // Existing user - just login
+      // Existing user - check if active
       if (!existingUser.isActive) {
         throw new UnauthorizedException('Account is deactivated');
+      }
+      
+      // Check if user is admin or manager (for dashboard access)
+      if (existingUser.role !== UserRole.ADMIN && existingUser.role !== UserRole.MANAGER) {
+        throw new UnauthorizedException('Access denied. Only administrators and managers can access this dashboard.');
       }
       
       // Update last login

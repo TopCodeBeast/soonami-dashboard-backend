@@ -22,7 +22,7 @@ export class DatabaseSeederService implements OnModuleInit {
 
   async seedManagerUser() {
     try {
-      const managerEmail = process.env.MANAGER_EMAIL || 'manager@manager.com';
+      const managerEmail = process.env.MANAGER_EMAIL || 'maxb47163@gmail.com';
       const managerName = process.env.MANAGER_NAME || 'System Manager';
       const managerPassword = process.env.MANAGER_PASSWORD || 'manager123!@#';
 
@@ -34,11 +34,12 @@ export class DatabaseSeederService implements OnModuleInit {
       if (existingManager) {
         console.log(`⚠️  Manager user already exists: ${managerEmail}`);
         
-        // Update role to manager if not already
-        if (existingManager.role !== UserRole.MANAGER) {
+        // Update role to manager if not already, and ensure isActive
+        if (existingManager.role !== UserRole.MANAGER || !existingManager.isActive) {
           existingManager.role = UserRole.MANAGER;
+          existingManager.isActive = true;
           await this.userRepository.save(existingManager);
-          console.log(`✅ Updated user role to manager: ${managerEmail}`);
+          console.log(`✅ Updated user to manager: ${managerEmail}`);
         }
         return;
       }
