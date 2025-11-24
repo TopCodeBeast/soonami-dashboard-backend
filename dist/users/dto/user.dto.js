@@ -131,6 +131,16 @@ __decorate([
     (0, class_validator_1.IsString)(),
     __metadata("design:type", String)
 ], UpdateUserDto.prototype, "gemTransactionMetadata", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        example: '2024-01-15T00:00:00.000Z',
+        required: false,
+        description: 'Last daily reward claim date (for tracking daily reward eligibility)',
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsDateString)(),
+    __metadata("design:type", String)
+], UpdateUserDto.prototype, "lastDailyRewardClaimDate", void 0);
 class UserResponseDto {
 }
 exports.UserResponseDto = UserResponseDto;
@@ -162,6 +172,10 @@ __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Date)
 ], UserResponseDto.prototype, "lastLoginAt", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({ required: false }),
+    __metadata("design:type", Date)
+], UserResponseDto.prototype, "lastDailyRewardClaimDate", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)(),
     __metadata("design:type", Date)

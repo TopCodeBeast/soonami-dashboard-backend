@@ -13,6 +13,7 @@ export declare class User {
     role: UserRole;
     isActive: boolean;
     lastLoginAt: Date;
+    lastDailyRewardClaimDate: Date;
     createdAt: Date;
     updatedAt: Date;
     wallets: Wallet[];

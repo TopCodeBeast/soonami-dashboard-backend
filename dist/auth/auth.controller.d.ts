@@ -23,6 +23,7 @@ export declare class AuthController {
         role: import("../users/entities/user.entity").UserRole;
         isActive: boolean;
         lastLoginAt: Date;
+        lastDailyRewardClaimDate: Date;
         createdAt: Date;
         updatedAt: Date;
         wallets: import("../wallets/entities/wallet.entity").Wallet[];
@@ -48,6 +49,7 @@ export declare class AuthController {
             role: import("../users/entities/user.entity").UserRole;
             isActive: boolean;
             lastLoginAt: Date;
+            lastDailyRewardClaimDate: Date;
             createdAt: Date;
             updatedAt: Date;
         };
@@ -76,6 +78,7 @@ export declare class AuthController {
             role: import("../users/entities/user.entity").UserRole;
             isActive: boolean;
             lastLoginAt: Date;
+            lastDailyRewardClaimDate: Date;
             createdAt: Date;
             updatedAt: Date;
         };

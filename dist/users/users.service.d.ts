@@ -19,6 +19,7 @@ export declare class UsersService {
         role: UserRole;
         isActive: boolean;
         lastLoginAt: Date;
+        lastDailyRewardClaimDate: Date;
         createdAt: Date;
         updatedAt: Date;
         wallets: Wallet[];
@@ -39,6 +40,7 @@ export declare class UsersService {
         role: UserRole;
         isActive: boolean;
         lastLoginAt: Date;
+        lastDailyRewardClaimDate: Date;
         createdAt: Date;
         updatedAt: Date;
         wallets: Wallet[];

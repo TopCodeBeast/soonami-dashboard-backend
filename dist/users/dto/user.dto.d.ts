@@ -18,6 +18,7 @@ export declare class UpdateUserDto {
     isActive?: boolean;
     gemTransactionReason?: string;
     gemTransactionMetadata?: string;
+    lastDailyRewardClaimDate?: string;
 }
 export declare class UserResponseDto {
     id: string;
@@ -27,6 +28,7 @@ export declare class UserResponseDto {
     role: UserRole;
     isActive: boolean;
     lastLoginAt: Date;
+    lastDailyRewardClaimDate?: Date;
     createdAt: Date;
     updatedAt: Date;
     wallets: any[];

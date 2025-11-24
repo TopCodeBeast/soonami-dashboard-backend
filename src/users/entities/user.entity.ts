@@ -44,6 +44,9 @@ export class User {
   @Column({ nullable: true })
   lastLoginAt: Date;
 
+  @Column({ nullable: true })
+  lastDailyRewardClaimDate: Date;
+
   @CreateDateColumn()
   createdAt: Date;
 
