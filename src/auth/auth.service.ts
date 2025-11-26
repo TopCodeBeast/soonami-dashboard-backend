@@ -248,10 +248,9 @@ export class AuthService {
         throw new UnauthorizedException('Account is deactivated');
       }
       
-      // Check if user is admin or manager (for dashboard access)
-      if (existingUser.role !== UserRole.ADMIN && existingUser.role !== UserRole.MANAGER) {
-        throw new UnauthorizedException('Access denied. Only administrators and managers can access this dashboard.');
-      }
+      // Note: Role checking should be done by the calling application (dashboard frontend)
+      // This endpoint is used by both the dashboard and the Python project,
+      // so we allow all active users to authenticate here
       
       // Update last login
       await this.userRepository.update(existingUser.id, { lastLoginAt: new Date() });

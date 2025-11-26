@@ -23,8 +23,9 @@ export class SeedingController {
   }
 
   @Post('manager')
-  @ApiOperation({ summary: 'Seed manager user only' })
+  @ApiOperation({ summary: 'Seed manager user only (public endpoint for setup)' })
   @ApiResponse({ status: 200, description: 'Manager user seeded successfully' })
+  // No auth guard - allow public access for initial setup
   async seedManager() {
     await this.seederService.seedManagerUser();
     return {

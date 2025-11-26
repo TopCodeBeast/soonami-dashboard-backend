@@ -189,9 +189,6 @@ let AuthService = class AuthService {
             if (!existingUser.isActive) {
                 throw new common_1.UnauthorizedException('Account is deactivated');
             }
-            if (existingUser.role !== user_entity_1.UserRole.ADMIN && existingUser.role !== user_entity_1.UserRole.MANAGER) {
-                throw new common_1.UnauthorizedException('Access denied. Only administrators and managers can access this dashboard.');
-            }
             await this.userRepository.update(existingUser.id, { lastLoginAt: new Date() });
             const payload = { email: existingUser.email, sub: existingUser.id, role: existingUser.role };
             const accessToken = this.jwtService.sign(payload, {
