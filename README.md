@@ -206,11 +206,16 @@ JWT_REFRESH_SECRET=your_production_refresh_secret_32_chars_minimum
 
 ### 2. Database Migration
 ```bash
-# Disable synchronize in production
-# Use migrations instead
-npm run build
-npm run start:prod
+# Run migrations manually
+npm run migration:run
+
+# Or set RUN_MIGRATIONS=true to auto-run on startup
+RUN_MIGRATIONS=true npm run start:prod
+
+# See MIGRATIONS.md for detailed migration guide
 ```
+
+**Important**: `synchronize` is disabled. Always use migrations for schema changes.
 
 ### 3. Security Checklist
 - [ ] Change default JWT secrets

@@ -28,9 +28,6 @@ export class User {
   @Column({ default: 0 })
   gem: number;
 
-  @Column({ nullable: true })
-  password: string;
-
   @Column({
     type: 'enum',
     enum: UserRole,

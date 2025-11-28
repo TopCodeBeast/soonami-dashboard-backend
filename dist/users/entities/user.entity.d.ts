@@ -9,7 +9,6 @@ export declare class User {
     email: string;
     name: string;
     gem: number;
-    password: string;
     role: UserRole;
     isActive: boolean;
     lastLoginAt: Date;

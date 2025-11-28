@@ -29,9 +29,11 @@ export class AuthService {
       relations: ['wallets'],
     });
 
-    if (user && (await bcrypt.compare(password, user.password))) {
-      const { password, ...result } = user;
-      return result;
+    // Note: This method uses password-based login which is legacy.
+    // The main login flow uses email verification code (verifyCode method).
+    // If password column exists in DB, this will work, but password is not in User entity anymore.
+    if (user && user.password && (await bcrypt.compare(password, user.password))) {
+      return user;
     }
     return null;
   }
@@ -97,9 +99,8 @@ export class AuthService {
     });
 
     const savedUser = await this.userRepository.save(user);
-    const { password, ...result } = savedUser;
-
-    return result;
+    // Note: Password is no longer in User entity, so it won't be included in the result
+    return savedUser;
   }
 
   async refreshToken(refreshToken: string) {
@@ -205,12 +206,11 @@ export class AuthService {
         );
       }
       
-      // Create user without password
+      // Create user (no password needed - using email verification code login)
       const user = this.userRepository.create({
         email,
         name,
         gem: 0,
-        password: null, // No password needed
         role: UserRole.USER,
         isActive: true,
       });
@@ -231,13 +231,11 @@ export class AuthService {
         expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
       });
       
-      const { password, ...userResult } = savedUser;
-      
       return {
         accessToken,
         refreshToken,
         user: {
-          ...userResult,
+          ...savedUser,
           wallets: savedUser.wallets || [],
         },
         isFirstLogin: true,
@@ -266,13 +264,11 @@ export class AuthService {
         expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
       });
       
-      const { password, ...userResult } = existingUser;
-      
       return {
         accessToken,
         refreshToken,
         user: {
-          ...userResult,
+          ...existingUser,
           wallets: existingUser.wallets || [],
         },
         isFirstLogin: false,
@@ -335,13 +331,11 @@ export class AuthService {
       expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
     });
     
-    const { password, ...userResult } = user;
-    
     return {
       accessToken,
       refreshToken,
       user: {
-        ...userResult,
+        ...user,
         wallets: user.wallets || [],
       },
     };

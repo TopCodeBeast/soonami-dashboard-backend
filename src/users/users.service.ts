@@ -47,12 +47,10 @@ export class UsersService {
 
     const user = this.userRepository.create({
       ...createUserDto,
-      password: null, // No password needed - using email verification code login
     });
 
     const savedUser = await this.userRepository.save(user);
-    const { password, ...result } = savedUser;
-    return result;
+    return savedUser;
   }
 
   async findAll(currentUserRole: UserRole) {

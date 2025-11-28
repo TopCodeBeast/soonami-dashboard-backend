@@ -29,7 +29,9 @@ import { GemTransaction } from './users/entities/gem-transaction.entity';
       password: process.env.DB_PASSWORD,
       database: process.env.DB_NAME || 'user_management',
       entities: [User, Wallet, GemTransaction],
-      synchronize: process.env.NODE_ENV === 'development',
+      migrations: ['dist/src/migrations/*.js'],
+      migrationsRun: process.env.RUN_MIGRATIONS === 'true', // Set RUN_MIGRATIONS=true to auto-run migrations
+      synchronize: false, // Disabled - use migrations instead
       logging: process.env.NODE_ENV === 'development',
     }),
     AuthModule,
