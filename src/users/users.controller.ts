@@ -29,7 +29,7 @@ export class UsersController {
   @ApiResponse({ status: 403, description: 'Forbidden - Admin access required' })
   @ApiResponse({ status: 409, description: 'Email already exists' })
   async create(@Body() createUserDto: CreateUserDto, @Request() req: any) {
-    return this.usersService.create(createUserDto, req.user.role);
+    return this.usersService.create(createUserDto, req.user.role, req.user.email);
   }
 
   @Get()
@@ -66,7 +66,7 @@ export class UsersController {
     @Body() updateUserDto: UpdateUserDto,
     @Request() req: any,
   ) {
-    return this.usersService.update(id, updateUserDto, req.user.userId, req.user.role);
+    return this.usersService.update(id, updateUserDto, req.user.userId, req.user.role, req.user.email);
   }
 
   @Get('leaderboard/gems/holders')
@@ -160,6 +160,6 @@ export class UsersController {
   @ApiResponse({ status: 403, description: 'Forbidden - Admin access required' })
   @ApiResponse({ status: 404, description: 'User not found' })
   async remove(@Param('id') id: string, @Request() req: any) {
-    return this.usersService.remove(id, req.user.userId, req.user.role);
+    return this.usersService.remove(id, req.user.userId, req.user.role, req.user.email);
   }
 }

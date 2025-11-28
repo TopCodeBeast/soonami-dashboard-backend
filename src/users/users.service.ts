@@ -9,6 +9,7 @@ import { Repository, MoreThan, MoreThanOrEqual, LessThan } from 'typeorm';
 import { User, UserRole } from './entities/user.entity';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 import { RoleHierarchy } from './utils/role-hierarchy';
+import { ManagerWhitelist } from './utils/manager-whitelist';
 import { GemTransactionsService } from './gem-transactions.service';
 import { GemTransactionType } from './entities/gem-transaction.entity';
 import { Wallet } from '../wallets/entities/wallet.entity';
@@ -26,10 +27,15 @@ export class UsersService {
     private readonly gemTransactionsService: GemTransactionsService,
   ) {}
 
-  async create(createUserDto: CreateUserDto, currentUserRole: UserRole) {
+  async create(createUserDto: CreateUserDto, currentUserRole: UserRole, currentUserEmail: string) {
     // Only managers and admins can create users
     if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole)) {
       throw new ForbiddenException('Only managers and admins can create users');
+    }
+
+    // Check whitelist if trying to create a manager
+    if (createUserDto.role === UserRole.MANAGER && !ManagerWhitelist.isWhitelisted(currentUserEmail)) {
+      throw new ForbiddenException('Only whitelisted users can create managers');
     }
 
     // Check if current user can assign the requested role
@@ -91,6 +97,7 @@ export class UsersService {
     updateUserDto: UpdateUserDto,
     currentUserId: string,
     currentUserRole: UserRole,
+    currentUserEmail: string,
   ) {
     // Users can only update their own profile (except role), managers and admins can update any user
     if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole) && currentUserId !== id) {
@@ -101,6 +108,14 @@ export class UsersService {
     const targetUser = await this.userRepository.findOne({ where: { id } });
     if (!targetUser) {
       throw new NotFoundException('User not found');
+    }
+
+    // Check whitelist if trying to assign manager role or updating an existing manager
+    const isAssigningManager = updateUserDto.role === UserRole.MANAGER;
+    const isUpdatingManager = targetUser.role === UserRole.MANAGER;
+    
+    if ((isAssigningManager || isUpdatingManager) && !ManagerWhitelist.isWhitelisted(currentUserEmail)) {
+      throw new ForbiddenException('Only whitelisted users can manage managers');
     }
 
     // Check if current user can change roles
@@ -146,7 +161,7 @@ export class UsersService {
     return this.findOne(id, currentUserId, currentUserRole);
   }
 
-  async remove(id: string, currentUserId: string, currentUserRole: UserRole) {
+  async remove(id: string, currentUserId: string, currentUserRole: UserRole, currentUserEmail: string) {
     // Only managers and admins can delete users
     if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole)) {
       throw new ForbiddenException('Only managers and admins can delete users');
@@ -160,6 +175,11 @@ export class UsersService {
     const user = await this.userRepository.findOne({ where: { id } });
     if (!user) {
       throw new NotFoundException('User not found');
+    }
+
+    // Check whitelist if trying to delete a manager
+    if (user.role === UserRole.MANAGER && !ManagerWhitelist.isWhitelisted(currentUserEmail)) {
+      throw new ForbiddenException('Only whitelisted users can delete managers');
     }
 
     // Check if current user can delete this user based on role hierarchy
