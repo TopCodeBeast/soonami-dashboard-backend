@@ -1,7 +1,6 @@
 import {
   IsEmail,
   IsString,
-  MinLength,
   IsOptional,
   IsEnum,
   IsBoolean,
@@ -25,11 +24,6 @@ export class CreateUserDto {
   @IsOptional()
   @IsNumber()
   gem?: number;
-
-  @ApiProperty({ example: 'password123' })
-  @IsString()
-  @MinLength(6)
-  password: string;
 
   @ApiProperty({ enum: UserRole, example: UserRole.USER })
   @IsEnum(UserRole)
@@ -75,12 +69,6 @@ export class UpdateUserDto {
   @IsOptional()
   @IsNumber()
   gem?: number;
-
-  @ApiProperty({ example: 'password123', required: false })
-  @IsString()
-  @MinLength(6)
-  @IsOptional()
-  password?: string;
 
   @ApiProperty({ enum: UserRole, example: UserRole.USER, required: false })
   @IsEnum(UserRole)

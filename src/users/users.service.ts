@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, MoreThan, MoreThanOrEqual, LessThan } from 'typeorm';
-import * as bcrypt from 'bcryptjs';
 import { User, UserRole } from './entities/user.entity';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 import { RoleHierarchy } from './utils/role-hierarchy';
@@ -46,14 +45,9 @@ export class UsersService {
       throw new ConflictException('Email already exists');
     }
 
-    const hashedPassword = await bcrypt.hash(
-      createUserDto.password,
-      parseInt(process.env.BCRYPT_ROUNDS) || 12,
-    );
-
     const user = this.userRepository.create({
       ...createUserDto,
-      password: hashedPassword,
+      password: null, // No password needed - using email verification code login
     });
 
     const savedUser = await this.userRepository.save(user);
@@ -121,14 +115,6 @@ export class UsersService {
       if (currentUserId === id && !RoleHierarchy.canManageRole(currentUserRole, updateUserDto.role)) {
         throw new ForbiddenException('You cannot change your own role');
       }
-    }
-
-    // Hash password if provided
-    if (updateUserDto.password) {
-      updateUserDto.password = await bcrypt.hash(
-        updateUserDto.password,
-        parseInt(process.env.BCRYPT_ROUNDS) || 12,
-      );
     }
 
     let gemChange: number | null = null;

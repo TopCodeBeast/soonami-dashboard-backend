@@ -3,7 +3,6 @@ export declare class CreateUserDto {
     email: string;
     name?: string;
     gem?: number;
-    password: string;
     role?: UserRole;
     isActive?: boolean;
     gemTransactionReason?: string;
@@ -13,7 +12,6 @@ export declare class UpdateUserDto {
     email?: string;
     name?: string;
     gem?: number;
-    password?: string;
     role?: UserRole;
     isActive?: boolean;
     gemTransactionReason?: string;

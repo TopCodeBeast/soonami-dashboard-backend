@@ -34,12 +34,6 @@ __decorate([
     __metadata("design:type", Number)
 ], CreateUserDto.prototype, "gem", void 0);
 __decorate([
-    (0, swagger_1.ApiProperty)({ example: 'password123' }),
-    (0, class_validator_1.IsString)(),
-    (0, class_validator_1.MinLength)(6),
-    __metadata("design:type", String)
-], CreateUserDto.prototype, "password", void 0);
-__decorate([
     (0, swagger_1.ApiProperty)({ enum: user_entity_1.UserRole, example: user_entity_1.UserRole.USER }),
     (0, class_validator_1.IsEnum)(user_entity_1.UserRole),
     (0, class_validator_1.IsOptional)(),
@@ -92,13 +86,6 @@ __decorate([
     (0, class_validator_1.IsNumber)(),
     __metadata("design:type", Number)
 ], UpdateUserDto.prototype, "gem", void 0);
-__decorate([
-    (0, swagger_1.ApiProperty)({ example: 'password123', required: false }),
-    (0, class_validator_1.IsString)(),
-    (0, class_validator_1.MinLength)(6),
-    (0, class_validator_1.IsOptional)(),
-    __metadata("design:type", String)
-], UpdateUserDto.prototype, "password", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({ enum: user_entity_1.UserRole, example: user_entity_1.UserRole.USER, required: false }),
     (0, class_validator_1.IsEnum)(user_entity_1.UserRole),
