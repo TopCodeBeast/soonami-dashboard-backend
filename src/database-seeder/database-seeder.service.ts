@@ -43,11 +43,10 @@ export class DatabaseSeederService implements OnModuleInit {
         return;
       }
 
-      // Create new manager user without password (uses email code verification)
+      // Create new manager user (no password needed - uses email code verification)
       const managerUser = this.userRepository.create({
         email: managerEmail,
         name: managerName,
-        password: null, // No password needed - uses email code verification
         role: UserRole.MANAGER,
         isActive: true,
         gem: 0,
@@ -80,13 +79,10 @@ export class DatabaseSeederService implements OnModuleInit {
         return;
       }
 
-      // Create new admin user
-      const hashedPassword = await bcrypt.hash(adminPassword, 12);
-      
+      // Create new admin user (no password needed - uses email code verification)
       const adminUser = this.userRepository.create({
         email: adminEmail,
         name: adminName,
-        password: hashedPassword,
         role: UserRole.ADMIN,
         isActive: true,
         gem: 0,
@@ -96,7 +92,7 @@ export class DatabaseSeederService implements OnModuleInit {
       console.log(`✅ Admin user created: ${savedAdmin.email}`);
       console.log(`   ID: ${savedAdmin.id}`);
       console.log(`   Role: ${savedAdmin.role}`);
-      console.log(`   Password: ${adminPassword}`);
+      console.log(`   Password: None (email code verification only)`);
 
     } catch (error) {
       console.error('❌ Error seeding admin user:', error.message);
@@ -132,11 +128,11 @@ export class DatabaseSeederService implements OnModuleInit {
           continue;
         }
 
-        const hashedPassword = await bcrypt.hash(userData.password, 12);
+        // Remove password from userData since it's not in the entity anymore
+        const { password, ...userDataWithoutPassword } = userData;
         
         const user = this.userRepository.create({
-          ...userData,
-          password: hashedPassword,
+          ...userDataWithoutPassword,
           isActive: true,
         });
 

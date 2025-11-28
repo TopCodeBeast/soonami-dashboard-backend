@@ -24,17 +24,9 @@ export class AuthService {
   ) {}
 
   async validateUser(email: string, password: string): Promise<any> {
-    const user = await this.userRepository.findOne({
-      where: { email },
-      relations: ['wallets'],
-    });
-
-    // Note: This method uses password-based login which is legacy.
+    // Legacy method - password-based login is no longer supported
+    // This method is kept for backward compatibility but will always return null
     // The main login flow uses email verification code (verifyCode method).
-    // If password column exists in DB, this will work, but password is not in User entity anymore.
-    if (user && user.password && (await bcrypt.compare(password, user.password))) {
-      return user;
-    }
     return null;
   }
 
@@ -85,21 +77,16 @@ export class AuthService {
       throw new ConflictException('Email already exists');
     }
 
-    const hashedPassword = await bcrypt.hash(
-      registerDto.password,
-      parseInt(process.env.BCRYPT_ROUNDS) || 12,
-    );
-
+    // Legacy method - password-based registration is no longer supported
+    // Users should use email verification code registration (verifyCode method)
     const user = this.userRepository.create({
       email: registerDto.email,
       name: registerDto.name,
       gem: registerDto.gem || 0,
-      password: hashedPassword,
       role: UserRole.USER,
     });
 
     const savedUser = await this.userRepository.save(user);
-    // Note: Password is no longer in User entity, so it won't be included in the result
     return savedUser;
   }
 
@@ -130,37 +117,9 @@ export class AuthService {
   }
 
   async changePassword(userId: string, changePasswordDto: ChangePasswordDto) {
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-    });
-
-    if (!user) {
-      throw new BadRequestException('User not found');
-    }
-
-    if (!user.password) {
-      throw new BadRequestException('Password not set for this account');
-    }
-
-    const isCurrentPasswordValid = await bcrypt.compare(
-      changePasswordDto.currentPassword,
-      user.password,
-    );
-
-    if (!isCurrentPasswordValid) {
-      throw new BadRequestException('Current password is incorrect');
-    }
-
-    const hashedNewPassword = await bcrypt.hash(
-      changePasswordDto.newPassword,
-      parseInt(process.env.BCRYPT_ROUNDS) || 12,
-    );
-
-    await this.userRepository.update(userId, {
-      password: hashedNewPassword,
-    });
-
-    return { message: 'Password changed successfully' };
+    // Legacy method - password-based authentication is no longer supported
+    // This system uses email verification code login, so password changes are not applicable
+    throw new BadRequestException('Password changes are not supported. This system uses email verification code login.');
   }
 
   async requestCode(requestCodeDto: RequestCodeDto) {
