@@ -21,6 +21,12 @@ export class RoleHierarchy {
     const currentLevel = this.ROLE_LEVELS[currentRole];
     const targetLevel = this.ROLE_LEVELS[targetRole];
     
+    // Only managers can assign admin or manager roles
+    // Admins can only assign user role
+    if (targetRole === UserRole.ADMIN || targetRole === UserRole.MANAGER) {
+      return currentRole === UserRole.MANAGER;
+    }
+    
     // Can only manage roles lower than current role
     return currentLevel > targetLevel;
   }
