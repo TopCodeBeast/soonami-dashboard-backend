@@ -69,6 +69,43 @@ export class StripeCardsController {
     return await this.stripeCardsService.findByUserEmail(email, requestEmail);
   }
 
+  @Get(':sessionId/full-details')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get full card details from Stripe API (Admin only)',
+    description:
+      'Retrieve complete card details including billing address, customer name, and all available information from Stripe. Only accessible by maxb47163@gmail.com',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Full card details from Stripe',
+  })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  @ApiResponse({ status: 404, description: 'Card not found' })
+  async getFullDetails(@Param('sessionId') sessionId: string, @Request() req: any) {
+    const userEmail = req.user?.email;
+    return await this.stripeCardsService.getFullCardDetails(sessionId, userEmail);
+  }
+
+  @Get('statistics')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Get card statistics grouped by user (Admin only)',
+    description:
+      'Get statistics showing how many cards each user has. Only accessible by maxb47163@gmail.com',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Card statistics grouped by user',
+  })
+  @ApiResponse({ status: 403, description: 'Access denied' })
+  async getStatistics(@Request() req: any) {
+    const userEmail = req.user?.email;
+    return await this.stripeCardsService.getCardStatistics(userEmail);
+  }
+
   @Get(':sessionId')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
