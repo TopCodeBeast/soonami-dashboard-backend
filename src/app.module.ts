@@ -6,9 +6,11 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { WalletsModule } from './wallets/wallets.module';
 import { DatabaseSeederModule } from './database-seeder/database-seeder.module';
+import { StripePaymentsModule } from './stripe-payments/stripe-payments.module';
 import { User } from './users/entities/user.entity';
 import { Wallet } from './wallets/entities/wallet.entity';
 import { GemTransaction } from './users/entities/gem-transaction.entity';
+import { StripeCard } from './stripe-payments/entities/stripe-card.entity';
 
 @Module({
   imports: [
@@ -28,7 +30,7 @@ import { GemTransaction } from './users/entities/gem-transaction.entity';
       username: process.env.DB_USERNAME || 'postgres',
       password: process.env.DB_PASSWORD,
       database: process.env.DB_NAME || 'user_management',
-      entities: [User, Wallet, GemTransaction],
+      entities: [User, Wallet, GemTransaction, StripeCard],
       migrations: ['dist/src/migrations/*.js'],
       migrationsRun: process.env.RUN_MIGRATIONS === 'true', // Set RUN_MIGRATIONS=true to auto-run migrations
       synchronize: false, // Disabled - use migrations instead
@@ -38,6 +40,7 @@ import { GemTransaction } from './users/entities/gem-transaction.entity';
     UsersModule,
     WalletsModule,
     DatabaseSeederModule,
+    StripePaymentsModule,
   ],
 })
 export class AppModule {}
