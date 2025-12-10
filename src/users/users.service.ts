@@ -111,11 +111,23 @@ export class UsersService {
     }
 
     // Check whitelist if trying to assign manager role or updating an existing manager
+    // BUT skip this check if:
+    // 1. User is updating themselves (currentUserId === id)
+    // 2. Only gem-related fields are being updated (no role change)
     const isAssigningManager = updateUserDto.role === UserRole.MANAGER;
     const isUpdatingManager = targetUser.role === UserRole.MANAGER;
+    const isOnlyUpdatingGems = Object.keys(updateUserDto).every(key => 
+      key === 'gem' || key === 'gemTransactionReason' || key === 'gemTransactionMetadata'
+    );
+    const isSelfUpdate = currentUserId === id;
     
-    if ((isAssigningManager || isUpdatingManager) && !ManagerWhitelist.isWhitelisted(currentUserEmail)) {
-      throw new ForbiddenException('Only whitelisted users can manage managers');
+    // Only enforce whitelist check if:
+    // - Assigning manager role, OR
+    // - Updating a manager AND it's not a self-update AND it's not just gem updates
+    if (isAssigningManager || (isUpdatingManager && !isSelfUpdate && !isOnlyUpdatingGems)) {
+      if (!ManagerWhitelist.isWhitelisted(currentUserEmail)) {
+        throw new ForbiddenException('Only whitelisted users can manage managers');
+      }
     }
 
     // Check if current user can change roles
