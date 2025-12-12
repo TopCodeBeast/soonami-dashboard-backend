@@ -8,6 +8,7 @@ import { JwtStrategy } from './jwt.strategy';
 import { EmailService } from './services/email.service';
 import { CodeStorageService } from './services/code-storage.service';
 import { User } from '../users/entities/user.entity';
+import { StampsModule } from '../stamps/stamps.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { User } from '../users/entities/user.entity';
       secret: process.env.JWT_SECRET,
       signOptions: { expiresIn: process.env.JWT_EXPIRES_IN || '15m' },
     }),
+    StampsModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy, EmailService, CodeStorageService],

@@ -12,6 +12,7 @@ import { User, UserRole } from '../users/entities/user.entity';
 import { LoginDto, RegisterDto, ChangePasswordDto, RequestCodeDto, VerifyCodeDto, CheckUserDto } from './dto/auth.dto';
 import { EmailService } from './services/email.service';
 import { CodeStorageService } from './services/code-storage.service';
+import { StampsService } from '../stamps/stamps.service';
 
 @Injectable()
 export class AuthService {
@@ -21,6 +22,7 @@ export class AuthService {
     private jwtService: JwtService,
     private emailService: EmailService,
     private codeStorageService: CodeStorageService,
+    private stampsService: StampsService,
   ) {}
 
   async validateUser(email: string, password: string): Promise<any> {
@@ -179,6 +181,24 @@ export class AuthService {
       // Update last login
       await this.userRepository.update(savedUser.id, { lastLoginAt: new Date() });
       
+      // Collect daily stamp
+      let stampInfo = null;
+      try {
+        const stampResult = await this.stampsService.claimStamp(savedUser.id);
+        if (stampResult.success) {
+          stampInfo = {
+            collected: true,
+            stampsCollected: stampResult.stampsCollected,
+            stampsNeeded: stampResult.stampsNeeded,
+            reward: stampResult.reward,
+            message: stampResult.message,
+          };
+        }
+      } catch (error) {
+        console.error('Error collecting stamp:', error);
+        // Don't fail login if stamp collection fails
+      }
+      
       const payload = { email: savedUser.email, sub: savedUser.id, role: savedUser.role };
       const accessToken = this.jwtService.sign(payload, {
         secret: process.env.JWT_SECRET,
@@ -198,6 +218,7 @@ export class AuthService {
           wallets: savedUser.wallets || [],
         },
         isFirstLogin: true,
+        stampInfo,
       };
     } else {
       // Existing user - check if active
@@ -211,6 +232,24 @@ export class AuthService {
       
       // Update last login
       await this.userRepository.update(existingUser.id, { lastLoginAt: new Date() });
+      
+      // Collect daily stamp
+      let stampInfo = null;
+      try {
+        const stampResult = await this.stampsService.claimStamp(existingUser.id);
+        if (stampResult.success) {
+          stampInfo = {
+            collected: true,
+            stampsCollected: stampResult.stampsCollected,
+            stampsNeeded: stampResult.stampsNeeded,
+            reward: stampResult.reward,
+            message: stampResult.message,
+          };
+        }
+      } catch (error) {
+        console.error('Error collecting stamp:', error);
+        // Don't fail login if stamp collection fails
+      }
       
       const payload = { email: existingUser.email, sub: existingUser.id, role: existingUser.role };
       const accessToken = this.jwtService.sign(payload, {
@@ -231,6 +270,7 @@ export class AuthService {
           wallets: existingUser.wallets || [],
         },
         isFirstLogin: false,
+        stampInfo,
       };
     }
   }
@@ -279,6 +319,24 @@ export class AuthService {
     // Update last login
     await this.userRepository.update(user.id, { lastLoginAt: new Date() });
     
+    // Collect daily stamp
+    let stampInfo = null;
+    try {
+      const stampResult = await this.stampsService.claimStamp(user.id);
+      if (stampResult.success) {
+        stampInfo = {
+          collected: true,
+          stampsCollected: stampResult.stampsCollected,
+          stampsNeeded: stampResult.stampsNeeded,
+          reward: stampResult.reward,
+          message: stampResult.message,
+        };
+      }
+    } catch (error) {
+      console.error('Error collecting stamp:', error);
+      // Don't fail login if stamp collection fails
+    }
+    
     const payload = { email: user.email, sub: user.id, role: user.role };
     const accessToken = this.jwtService.sign(payload, {
       secret: process.env.JWT_SECRET,
@@ -297,6 +355,7 @@ export class AuthService {
         ...user,
         wallets: user.wallets || [],
       },
+      stampInfo,
     };
   }
 }

@@ -5,12 +5,14 @@ import { UsersController } from './users.controller';
 import { User } from './entities/user.entity';
 import { GemTransaction } from './entities/gem-transaction.entity';
 import { GemTransactionsService } from './gem-transactions.service';
+import { UserItem } from './entities/user-item.entity';
+import { UserItemsService } from './user-items.service';
 import { Wallet } from '../wallets/entities/wallet.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, GemTransaction, Wallet])],
+  imports: [TypeOrmModule.forFeature([User, GemTransaction, Wallet, UserItem])],
   controllers: [UsersController],
-  providers: [UsersService, GemTransactionsService],
-  exports: [UsersService, GemTransactionsService],
+  providers: [UsersService, GemTransactionsService, UserItemsService],
+  exports: [UsersService, GemTransactionsService, UserItemsService],
 })
 export class UsersModule {}

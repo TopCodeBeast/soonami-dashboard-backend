@@ -7,6 +7,7 @@ import {
   OneToMany,
 } from 'typeorm';
 import { Wallet } from '../../wallets/entities/wallet.entity';
+import { UserItem } from './user-item.entity';
 
 export enum UserRole {
   MANAGER = 'manager',
@@ -43,6 +44,18 @@ export class User {
 
   @Column({ nullable: true })
   lastDailyRewardClaimDate: Date;
+
+  @Column({ default: 0 })
+  stampsCollected: number;
+
+  @Column({ nullable: true })
+  lastStampClaimDate: Date;
+
+  @Column({ nullable: true })
+  firstStampClaimDate: Date;
+
+  @OneToMany(() => UserItem, (userItem) => userItem.user, { cascade: true })
+  userItems: UserItem[];
 
   @CreateDateColumn()
   createdAt: Date;
