@@ -29,29 +29,21 @@ export class WalletsService {
       }
     }
 
-    try {
-      // Check if wallet address already exists
-      const existingWallet = await this.walletRepository.findOne({
-        where: { address: createWalletDto.address },
-      });
+    // Check if wallet address already exists
+    const existingWallet = await this.walletRepository.findOne({
+      where: { address: createWalletDto.address },
+    });
 
-      if (existingWallet) {
-        throw new ConflictException('Wallet address already exists');
-      }
-
-      const wallet = this.walletRepository.create({
-        ...createWalletDto,
-        userId,
-      });
-
-      return this.walletRepository.save(wallet);
-    } catch (error: any) {
-      // If wallets table doesn't exist, throw a helpful error
-      if (error?.message?.includes('relation "wallets" does not exist')) {
-        throw new NotFoundException('Wallets feature is not available. The wallets table does not exist.');
-      }
-      throw error;
+    if (existingWallet) {
+      throw new ConflictException('Wallet address already exists');
     }
+
+    const wallet = this.walletRepository.create({
+      ...createWalletDto,
+      userId,
+    });
+
+    return this.walletRepository.save(wallet);
   }
 
   async findAll(userId: string, currentUserId: string, currentUserRole: UserRole) {
@@ -60,59 +52,43 @@ export class WalletsService {
       throw new ForbiddenException('You can only view your own wallets');
     }
 
-    try {
-      return await this.walletRepository.find({
-        where: { userId },
-        relations: ['user'],
-        select: {
+    return await this.walletRepository.find({
+      where: { userId },
+      relations: ['user'],
+      select: {
+        id: true,
+        address: true,
+        label: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+        userId: true,
+        user: {
           id: true,
-          address: true,
-          label: true,
-          isActive: true,
-          createdAt: true,
-          updatedAt: true,
-          userId: true,
-          user: {
-            id: true,
-            email: true,
-            name: true,
-          },
+          email: true,
+          name: true,
         },
-        order: { createdAt: 'DESC' },
-      });
-    } catch (error: any) {
-      // If wallets table doesn't exist, return empty array
-      if (error?.message?.includes('relation "wallets" does not exist')) {
-        return [];
-      }
-      throw error;
-    }
+      },
+      order: { createdAt: 'DESC' },
+    });
   }
 
   async findOne(id: string, currentUserId: string, currentUserRole: UserRole) {
-    try {
-      const wallet = await this.walletRepository.findOne({
-        where: { id },
-        relations: ['user'],
-      });
+    const wallet = await this.walletRepository.findOne({
+      where: { id },
+      relations: ['user'],
+    });
 
-      if (!wallet) {
-        throw new NotFoundException('Wallet not found');
-      }
-
-      // Users can only view their own wallets, managers and admins can view any wallet
-      if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole) && wallet.userId !== currentUserId) {
-        throw new ForbiddenException('You can only view your own wallets');
-      }
-
-      return wallet;
-    } catch (error: any) {
-      // If wallets table doesn't exist, throw a helpful error
-      if (error?.message?.includes('relation "wallets" does not exist')) {
-        throw new NotFoundException('Wallets feature is not available. The wallets table does not exist.');
-      }
-      throw error;
+    if (!wallet) {
+      throw new NotFoundException('Wallet not found');
     }
+
+    // Users can only view their own wallets, managers and admins can view any wallet
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole) && wallet.userId !== currentUserId) {
+      throw new ForbiddenException('You can only view your own wallets');
+    }
+
+    return wallet;
   }
 
   async update(
@@ -121,54 +97,38 @@ export class WalletsService {
     currentUserId: string,
     currentUserRole: UserRole,
   ) {
-    try {
-      const wallet = await this.walletRepository.findOne({
-        where: { id },
-      });
+    const wallet = await this.walletRepository.findOne({
+      where: { id },
+    });
 
-      if (!wallet) {
-        throw new NotFoundException('Wallet not found');
-      }
-
-      // Users can only update their own wallets, managers and admins can update any wallet
-      if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole) && wallet.userId !== currentUserId) {
-        throw new ForbiddenException('You can only update your own wallets');
-      }
-
-      await this.walletRepository.update(id, updateWalletDto);
-      return this.findOne(id, currentUserId, currentUserRole);
-    } catch (error: any) {
-      // If wallets table doesn't exist, throw a helpful error
-      if (error?.message?.includes('relation "wallets" does not exist')) {
-        throw new NotFoundException('Wallets feature is not available. The wallets table does not exist.');
-      }
-      throw error;
+    if (!wallet) {
+      throw new NotFoundException('Wallet not found');
     }
+
+    // Users can only update their own wallets, managers and admins can update any wallet
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole) && wallet.userId !== currentUserId) {
+      throw new ForbiddenException('You can only update your own wallets');
+    }
+
+    await this.walletRepository.update(id, updateWalletDto);
+    return this.findOne(id, currentUserId, currentUserRole);
   }
 
   async remove(id: string, currentUserId: string, currentUserRole: UserRole) {
-    try {
-      const wallet = await this.walletRepository.findOne({
-        where: { id },
-      });
+    const wallet = await this.walletRepository.findOne({
+      where: { id },
+    });
 
-      if (!wallet) {
-        throw new NotFoundException('Wallet not found');
-      }
-
-      // Users can only delete their own wallets, managers and admins can delete any wallet
-      if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole) && wallet.userId !== currentUserId) {
-        throw new ForbiddenException('You can only delete your own wallets');
-      }
-
-      await this.walletRepository.remove(wallet);
-      return { message: 'Wallet deleted successfully' };
-    } catch (error: any) {
-      // If wallets table doesn't exist, throw a helpful error
-      if (error?.message?.includes('relation "wallets" does not exist')) {
-        throw new NotFoundException('Wallets feature is not available. The wallets table does not exist.');
-      }
-      throw error;
+    if (!wallet) {
+      throw new NotFoundException('Wallet not found');
     }
+
+    // Users can only delete their own wallets, managers and admins can delete any wallet
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole) && wallet.userId !== currentUserId) {
+      throw new ForbiddenException('You can only delete your own wallets');
+    }
+
+    await this.walletRepository.remove(wallet);
+    return { message: 'Wallet deleted successfully' };
   }
 }

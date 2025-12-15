@@ -56,6 +56,12 @@ export class AuthService {
       expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
     });
 
+    // Reload user with wallets relation
+    const userWithWallets = await this.userRepository.findOne({
+      where: { id: user.id },
+      relations: ['wallets'],
+    });
+    
     return {
       accessToken,
       refreshToken,
@@ -65,7 +71,7 @@ export class AuthService {
         email: user.email,
         role: user.role,
         gem: user.gem,
-        wallets: user.wallets || [],
+        wallets: userWithWallets?.wallets || [],
       },
     };
   }
@@ -177,6 +183,12 @@ export class AuthService {
       
       const savedUser = await this.userRepository.save(user);
       
+      // Reload user with wallets relation
+      const userWithWallets = await this.userRepository.findOne({
+        where: { id: savedUser.id },
+        relations: ['wallets'],
+      });
+      
       // Update last login
       await this.userRepository.update(savedUser.id, { lastLoginAt: new Date() });
       
@@ -230,8 +242,19 @@ export class AuthService {
         accessToken,
         refreshToken,
         user: {
-          ...savedUser,
-          wallets: savedUser.wallets || [],
+          id: savedUser.id,
+          name: savedUser.name,
+          email: savedUser.email,
+          role: savedUser.role,
+          gem: savedUser.gem,
+          isActive: savedUser.isActive,
+          lastLoginAt: savedUser.lastLoginAt,
+          stampsCollected: savedUser.stampsCollected,
+          lastStampClaimDate: savedUser.lastStampClaimDate,
+          firstStampClaimDate: savedUser.firstStampClaimDate,
+          createdAt: savedUser.createdAt,
+          updatedAt: savedUser.updatedAt,
+          wallets: userWithWallets?.wallets || [],
         },
         isFirstLogin: true,
         stampInfo,
@@ -285,6 +308,12 @@ export class AuthService {
       // Update last login AFTER stamp claim (so cooldown check uses old value)
       await this.userRepository.update(existingUser.id, { lastLoginAt: new Date() });
       
+      // Reload user with wallets relation
+      const userWithWallets = await this.userRepository.findOne({
+        where: { id: existingUser.id },
+        relations: ['wallets'],
+      });
+      
       const payload = { email: existingUser.email, sub: existingUser.id, role: existingUser.role };
       const accessToken = this.jwtService.sign(payload, {
         secret: process.env.JWT_SECRET,
@@ -300,8 +329,19 @@ export class AuthService {
         accessToken,
         refreshToken,
         user: {
-          ...existingUser,
-          wallets: existingUser.wallets || [],
+          id: existingUser.id,
+          name: existingUser.name,
+          email: existingUser.email,
+          role: existingUser.role,
+          gem: existingUser.gem,
+          isActive: existingUser.isActive,
+          lastLoginAt: existingUser.lastLoginAt,
+          stampsCollected: existingUser.stampsCollected,
+          lastStampClaimDate: existingUser.lastStampClaimDate,
+          firstStampClaimDate: existingUser.firstStampClaimDate,
+          createdAt: existingUser.createdAt,
+          updatedAt: existingUser.updatedAt,
+          wallets: userWithWallets?.wallets || [],
         },
         isFirstLogin: false,
         stampInfo,
@@ -352,6 +392,12 @@ export class AuthService {
     // Update last login
     await this.userRepository.update(user.id, { lastLoginAt: new Date() });
     
+    // Reload user with wallets relation
+    const userWithWallets = await this.userRepository.findOne({
+      where: { id: user.id },
+      relations: ['wallets'],
+    });
+    
     // Collect daily stamp
     let stampInfo = null;
     try {
@@ -385,8 +431,19 @@ export class AuthService {
       accessToken,
       refreshToken,
       user: {
-        ...user,
-        wallets: user.wallets || [],
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        gem: user.gem,
+        isActive: user.isActive,
+        lastLoginAt: user.lastLoginAt,
+        stampsCollected: user.stampsCollected,
+        lastStampClaimDate: user.lastStampClaimDate,
+        firstStampClaimDate: user.firstStampClaimDate,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+        wallets: userWithWallets?.wallets || [],
       },
       stampInfo,
     };

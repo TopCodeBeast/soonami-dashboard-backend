@@ -67,15 +67,15 @@ export class UsersService {
     }
 
     const users = await this.userRepository.find({
-      // Don't load wallets relation if table doesn't exist
-      // relations: ['wallets'],
+      relations: ['wallets'],
       select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt', 'gem'],
     });
     
-    // Add empty wallets array to each user
-    return users.map(user => ({ ...user, wallets: [] }));
-
-    return users;
+    // Return users with wallets (or empty array if none)
+    return users.map(user => ({
+      ...user,
+      wallets: user.wallets || [],
+    }));
   }
 
   async findOne(id: string, currentUserId: string, currentUserRole: UserRole) {
@@ -86,8 +86,7 @@ export class UsersService {
 
     const user = await this.userRepository.findOne({
       where: { id },
-      // Don't load wallets relation if table doesn't exist
-      // relations: ['wallets'],
+      relations: ['wallets'],
       select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt', 'gem'],
     });
 
@@ -95,10 +94,10 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    // Add empty wallets array to match expected structure
+    // Return user with wallets (or empty array if none)
     return {
       ...user,
-      wallets: [],
+      wallets: user.wallets || [],
     };
   }
 
@@ -248,10 +247,45 @@ export class UsersService {
 
     console.log(`✅ Profile fetched for user ${currentUserId} with ${user.stampsCollected || 0} stamps`);
     
-    // Return user without wallets (table doesn't exist yet)
+    // Load wallets relation
+    const userWithWallets = await this.userRepository.findOne({
+      where: { id: currentUserId },
+      relations: ['wallets'],
+      select: [
+        'id',
+        'name',
+        'email',
+        'gem',
+        'role',
+        'isActive',
+        'lastLoginAt',
+        'stampsCollected',
+        'lastStampClaimDate',
+        'firstStampClaimDate',
+        'createdAt',
+        'updatedAt',
+      ],
+    });
+
+    if (!userWithWallets) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Return user with wallets (or empty array if none)
     return {
-      ...user,
-      wallets: [], // Return empty array for wallets
+      id: userWithWallets.id,
+      name: userWithWallets.name,
+      email: userWithWallets.email,
+      gem: userWithWallets.gem,
+      role: userWithWallets.role,
+      isActive: userWithWallets.isActive,
+      lastLoginAt: userWithWallets.lastLoginAt,
+      stampsCollected: userWithWallets.stampsCollected,
+      lastStampClaimDate: userWithWallets.lastStampClaimDate,
+      firstStampClaimDate: userWithWallets.firstStampClaimDate,
+      createdAt: userWithWallets.createdAt,
+      updatedAt: userWithWallets.updatedAt,
+      wallets: userWithWallets.wallets || [],
     };
   }
 
@@ -369,44 +403,35 @@ export class UsersService {
       }
     });
 
-    // Get recent wallet additions (last 7 days) - Skip if wallets table doesn't exist
-    try {
-      const recentWallets = await this.walletRepository.find({
-        where: {
-          createdAt: MoreThan(sevenDaysAgo),
-        },
-        relations: ['user'],
-        select: {
+    // Get recent wallet additions (last 7 days)
+    const recentWallets = await this.walletRepository.find({
+      where: {
+        createdAt: MoreThan(sevenDaysAgo),
+      },
+      relations: ['user'],
+      select: {
+        id: true,
+        createdAt: true,
+        user: {
           id: true,
-          createdAt: true,
-          user: {
-            id: true,
-            email: true,
-            name: true,
-          },
+          email: true,
+          name: true,
         },
-        order: { createdAt: 'DESC' },
-        take: limit,
-      });
+      },
+      order: { createdAt: 'DESC' },
+      take: limit,
+    });
 
-      recentWallets.forEach((wallet) => {
-        if (wallet.user) {
-          activities.push({
-            type: 'wallet_added',
-            action: 'Wallet added',
-            user: { id: wallet.user.id, email: wallet.user.email, name: wallet.user.name },
-            timestamp: wallet.createdAt,
-          });
-        }
-      });
-    } catch (error: any) {
-      // Silently skip if wallets table doesn't exist
-      if (error?.message?.includes('relation "wallets" does not exist')) {
-        // Table doesn't exist, skip wallet activities
-      } else {
-        throw error;
+    recentWallets.forEach((wallet) => {
+      if (wallet.user) {
+        activities.push({
+          type: 'wallet_added',
+          action: 'Wallet added',
+          user: { id: wallet.user.id, email: wallet.user.email, name: wallet.user.name },
+          timestamp: wallet.createdAt,
+        });
       }
-    }
+    });
 
     // Get recent gem transactions (last 7 days)
     const recentTransactions = await this.gemTransactionRepository.find({

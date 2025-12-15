@@ -53,6 +53,42 @@ export class UsersController {
     return this.usersService.getProfile(req.user.userId);
   }
 
+  @Get('items')
+  @ApiOperation({ summary: 'Get user items (rewards from stamps)' })
+  @ApiResponse({ status: 200, description: 'User items retrieved successfully' })
+  async getUserItems(@Request() req: any) {
+    const userId = req.user.userId;
+    console.log(`🔍 [CONTROLLER] getUserItems called for user ${userId}`);
+    
+    const items = await this.userItemsService.getUserItems(userId);
+    
+    console.log(`🔍 [CONTROLLER] getUserItems returning ${items.length} items for user ${userId}`);
+    
+    // Log each item in detail
+    items.forEach((item, index) => {
+      console.log(`🔍 [CONTROLLER] Item ${index + 1}:`, {
+        id: item.id,
+        userId: item.userId,
+        itemType: item.itemType,
+        itemTypeValue: item.itemType, // The actual enum value
+        amount: item.amount,
+        description: item.description
+      });
+    });
+    
+    // Log the full JSON structure that will be sent
+    const itemsJson = items.map(i => ({
+      id: i.id,
+      userId: i.userId,
+      itemType: i.itemType,
+      amount: i.amount,
+      description: i.description
+    }));
+    console.log(`🔍 [CONTROLLER] Full JSON response:`, JSON.stringify(itemsJson, null, 2));
+    
+    return items;
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get user by ID' })
   @ApiResponse({ status: 200, description: 'User retrieved successfully' })
@@ -158,13 +194,6 @@ export class UsersController {
   @ApiResponse({ status: 200, description: 'Dashboard statistics retrieved successfully' })
   async getDashboardStats(@Request() req: any) {
     return this.usersService.getDashboardStats(req.user.role);
-  }
-
-  @Get('items')
-  @ApiOperation({ summary: 'Get user items (rewards from stamps)' })
-  @ApiResponse({ status: 200, description: 'User items retrieved successfully' })
-  async getUserItems(@Request() req: any) {
-    return this.userItemsService.getUserItems(req.user.userId);
   }
 
   @Post('items/use')

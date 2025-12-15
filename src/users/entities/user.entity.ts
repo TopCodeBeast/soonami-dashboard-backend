@@ -6,8 +6,7 @@ import {
   UpdateDateColumn,
   OneToMany,
 } from 'typeorm';
-// Wallet import commented out - table doesn't exist yet
-// import { Wallet } from '../../wallets/entities/wallet.entity';
+import { Wallet } from '../../wallets/entities/wallet.entity';
 import { UserItem } from './user-item.entity';
 
 export enum UserRole {
@@ -55,16 +54,12 @@ export class User {
   @OneToMany(() => UserItem, (userItem) => userItem.user, { cascade: true })
   userItems: UserItem[];
 
+  @OneToMany(() => Wallet, (wallet) => wallet.user, { cascade: true })
+  wallets: Wallet[];
+
   @CreateDateColumn()
   createdAt: Date;
 
   @UpdateDateColumn()
   updatedAt: Date;
-
-  // Wallets relation commented out - table doesn't exist yet
-  // @OneToMany(() => Wallet, (wallet) => wallet.user, { cascade: true })
-  // wallets: Wallet[];
-  
-  // Temporary property to satisfy TypeScript (will be removed when wallets table is created)
-  wallets?: any[];
 }
