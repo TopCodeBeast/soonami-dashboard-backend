@@ -13,6 +13,7 @@ import { Wallet } from './wallets/entities/wallet.entity';
 import { GemTransaction } from './users/entities/gem-transaction.entity';
 import { StripeCard } from './stripe-payments/entities/stripe-card.entity';
 import { UserItem } from './users/entities/user-item.entity';
+import { StampReward } from './stamps/entities/stamp-reward.entity';
 
 @Module({
   imports: [
@@ -32,7 +33,7 @@ import { UserItem } from './users/entities/user-item.entity';
       username: process.env.DB_USERNAME || 'postgres',
       password: process.env.DB_PASSWORD,
       database: process.env.DB_NAME || 'user_management',
-      entities: [User, Wallet, GemTransaction, StripeCard, UserItem],
+      entities: [User, Wallet, GemTransaction, StripeCard, UserItem, StampReward],
       migrations: ['dist/src/migrations/*.js'],
       migrationsRun: process.env.RUN_MIGRATIONS === 'true', // Set RUN_MIGRATIONS=true to auto-run migrations
       synchronize: false, // Disabled - use migrations instead

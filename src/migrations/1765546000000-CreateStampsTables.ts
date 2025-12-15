@@ -64,14 +64,25 @@ export class CreateStampsTables1765546000000 implements MigrationInterface {
       }),
     );
 
-    // Create index on user_id for stamps
-    await queryRunner.createIndex(
-      'stamps',
-      new TableIndex({
-        name: 'IDX_stamps_user_id',
-        columnNames: ['user_id'],
-      }),
-    );
+    // Create index on user_id for stamps (check if exists first)
+    const stampsTable = await queryRunner.getTable('stamps');
+    if (stampsTable) {
+      const existingIndex = stampsTable.indices.find(
+        (idx) => idx.name === 'IDX_stamps_user_id',
+      );
+      if (!existingIndex) {
+        await queryRunner.createIndex(
+          'stamps',
+          new TableIndex({
+            name: 'IDX_stamps_user_id',
+            columnNames: ['user_id'],
+          }),
+        );
+        console.log('✅ Created index IDX_stamps_user_id');
+      } else {
+        console.log('ℹ️  Index IDX_stamps_user_id already exists - skipping');
+      }
+    }
 
     // Create trigger for updatedAt
     await queryRunner.query(`
@@ -134,14 +145,25 @@ export class CreateStampsTables1765546000000 implements MigrationInterface {
       }),
     );
 
-    // Create index on user_id for stamp_rewards
-    await queryRunner.createIndex(
-      'stamp_rewards',
-      new TableIndex({
-        name: 'IDX_stamp_rewards_user_id',
-        columnNames: ['user_id'],
-      }),
-    );
+    // Create index on user_id for stamp_rewards (check if exists first)
+    const stampRewardsTable = await queryRunner.getTable('stamp_rewards');
+    if (stampRewardsTable) {
+      const existingIndex = stampRewardsTable.indices.find(
+        (idx) => idx.name === 'IDX_stamp_rewards_user_id',
+      );
+      if (!existingIndex) {
+        await queryRunner.createIndex(
+          'stamp_rewards',
+          new TableIndex({
+            name: 'IDX_stamp_rewards_user_id',
+            columnNames: ['user_id'],
+          }),
+        );
+        console.log('✅ Created index IDX_stamp_rewards_user_id');
+      } else {
+        console.log('ℹ️  Index IDX_stamp_rewards_user_id already exists - skipping');
+      }
+    }
 
     console.log('✅ Created stamps and stamp_rewards tables');
   }

@@ -97,15 +97,6 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   gemTransactionMetadata?: string;
-
-  @ApiProperty({
-    example: '2024-01-15T00:00:00.000Z',
-    required: false,
-    description: 'Last daily reward claim date (for tracking daily reward eligibility)',
-  })
-  @IsOptional()
-  @IsDateString()
-  lastDailyRewardClaimDate?: string;
 }
 
 export class UserResponseDto {
@@ -129,9 +120,6 @@ export class UserResponseDto {
 
   @ApiProperty()
   lastLoginAt: Date;
-
-  @ApiProperty({ required: false })
-  lastDailyRewardClaimDate?: Date;
 
   @ApiProperty()
   createdAt: Date;

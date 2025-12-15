@@ -27,4 +27,12 @@ export class StampsController {
   async getStampStatus(@Request() req: any): Promise<StampStatusResponseDto> {
     return this.stampsService.getStampStatus(req.user.userId);
   }
+
+  @Get('rewards')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get user reward history' })
+  @ApiResponse({ status: 200, description: 'List of stamp rewards' })
+  async getRewardHistory(@Request() req: any) {
+    return this.stampsService.getRewardHistory(req.user.userId);
+  }
 }

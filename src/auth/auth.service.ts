@@ -65,7 +65,7 @@ export class AuthService {
         email: user.email,
         role: user.role,
         gem: user.gem,
-        wallets: user.wallets,
+        wallets: user.wallets || [],
       },
     };
   }
@@ -154,7 +154,6 @@ export class AuthService {
     // Check if user exists
     const existingUser = await this.userRepository.findOne({
       where: { email },
-      relations: ['wallets'],
     });
     
     const isFirstLogin = !existingUser;
@@ -185,18 +184,35 @@ export class AuthService {
       let stampInfo = null;
       try {
         const stampResult = await this.stampsService.claimStamp(savedUser.id);
-        if (stampResult.success) {
-          stampInfo = {
-            collected: true,
-            stampsCollected: stampResult.stampsCollected,
-            stampsNeeded: stampResult.stampsNeeded,
-            reward: stampResult.reward,
-            message: stampResult.message,
-          };
+        // Always include stamp info, even if not successful, so frontend can show current status
+        stampInfo = {
+          collected: stampResult.success,
+          success: stampResult.success,
+          stampsCollected: stampResult.stampsCollected,
+          stampsNeeded: stampResult.stampsNeeded,
+          reward: stampResult.reward, // Will be undefined if no reward
+          message: stampResult.message,
+        };
+        
+        // Log reward if given
+        if (stampResult.reward) {
+          console.log('🎉 [AUTH] New user received reward on first login:', stampResult.reward);
         }
       } catch (error) {
         console.error('Error collecting stamp:', error);
-        // Don't fail login if stamp collection fails
+        // Don't fail login if stamp collection fails, but still try to get current status
+        try {
+          const status = await this.stampsService.getStampStatus(savedUser.id);
+          stampInfo = {
+            collected: false,
+            success: false,
+            stampsCollected: status.stampsCollected,
+            stampsNeeded: status.stampsNeeded,
+            message: status.message,
+          };
+        } catch (statusError) {
+          console.error('Error getting stamp status:', statusError);
+        }
       }
       
       const payload = { email: savedUser.email, sub: savedUser.id, role: savedUser.role };
@@ -230,26 +246,44 @@ export class AuthService {
       // This endpoint is used by both the dashboard and the Python project,
       // so we allow all active users to authenticate here
       
-      // Update last login
-      await this.userRepository.update(existingUser.id, { lastLoginAt: new Date() });
-      
-      // Collect daily stamp
+      // IMPORTANT: Collect daily stamp BEFORE updating lastLoginAt
+      // Otherwise the 24-hour cooldown check will fail because lastLoginAt will be "now"
       let stampInfo = null;
       try {
         const stampResult = await this.stampsService.claimStamp(existingUser.id);
-        if (stampResult.success) {
-          stampInfo = {
-            collected: true,
-            stampsCollected: stampResult.stampsCollected,
-            stampsNeeded: stampResult.stampsNeeded,
-            reward: stampResult.reward,
-            message: stampResult.message,
-          };
+        // Always include stamp info, even if not successful, so frontend can show current status
+        stampInfo = {
+          collected: stampResult.success,
+          success: stampResult.success,
+          stampsCollected: stampResult.stampsCollected,
+          stampsNeeded: stampResult.stampsNeeded,
+          reward: stampResult.reward, // Will be undefined if no reward
+          message: stampResult.message,
+        };
+        
+        // Log reward if given
+        if (stampResult.reward) {
+          console.log('🎉 [AUTH] User received reward on login:', stampResult.reward);
         }
       } catch (error) {
         console.error('Error collecting stamp:', error);
-        // Don't fail login if stamp collection fails
+        // Don't fail login if stamp collection fails, but still try to get current status
+        try {
+          const status = await this.stampsService.getStampStatus(existingUser.id);
+          stampInfo = {
+            collected: false,
+            success: false,
+            stampsCollected: status.stampsCollected,
+            stampsNeeded: status.stampsNeeded,
+            message: status.message,
+          };
+        } catch (statusError) {
+          console.error('Error getting stamp status:', statusError);
+        }
       }
+      
+      // Update last login AFTER stamp claim (so cooldown check uses old value)
+      await this.userRepository.update(existingUser.id, { lastLoginAt: new Date() });
       
       const payload = { email: existingUser.email, sub: existingUser.id, role: existingUser.role };
       const accessToken = this.jwtService.sign(payload, {
@@ -300,7 +334,6 @@ export class AuthService {
     
     const user = await this.userRepository.findOne({
       where: { email: emailLower },
-      relations: ['wallets'],
     });
     
     if (!user) {

@@ -23,7 +23,28 @@ export class UserItemsService {
     if (userItem) {
       userItem.amount += amount;
       if (description) userItem.description = description;
+      
+      // If amount reaches 0 or below, delete the item
+      if (userItem.amount <= 0) {
+        await this.userItemRepository.remove(userItem);
+        // Return a new item with 0 amount for consistency
+        return this.userItemRepository.create({
+          userId,
+          itemType,
+          amount: 0,
+          description,
+        });
+      }
     } else {
+      // If trying to subtract from non-existent item, return null or create with 0
+      if (amount < 0) {
+        return this.userItemRepository.create({
+          userId,
+          itemType,
+          amount: 0,
+          description,
+        });
+      }
       userItem = this.userItemRepository.create({
         userId,
         itemType,

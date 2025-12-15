@@ -12,6 +12,7 @@ import { RoleHierarchy } from './utils/role-hierarchy';
 import { ManagerWhitelist } from './utils/manager-whitelist';
 import { GemTransactionsService } from './gem-transactions.service';
 import { GemTransactionType } from './entities/gem-transaction.entity';
+// Wallet import - table may not exist, queries are wrapped in try-catch
 import { Wallet } from '../wallets/entities/wallet.entity';
 import { GemTransaction } from './entities/gem-transaction.entity';
 
@@ -66,9 +67,13 @@ export class UsersService {
     }
 
     const users = await this.userRepository.find({
-      relations: ['wallets'],
-      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'lastDailyRewardClaimDate', 'createdAt', 'updatedAt', 'gem'],
+      // Don't load wallets relation if table doesn't exist
+      // relations: ['wallets'],
+      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt', 'gem'],
     });
+    
+    // Add empty wallets array to each user
+    return users.map(user => ({ ...user, wallets: [] }));
 
     return users;
   }
@@ -81,15 +86,27 @@ export class UsersService {
 
     const user = await this.userRepository.findOne({
       where: { id },
-      relations: ['wallets'],
-      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'lastDailyRewardClaimDate', 'createdAt', 'updatedAt', 'gem'],
+      // Don't load wallets relation if table doesn't exist
+      // relations: ['wallets'],
+      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt', 'gem'],
     });
 
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    return user;
+    // Add empty wallets array to match expected structure
+    return {
+      ...user,
+      wallets: [],
+    };
+  }
+
+  async findByEmail(email: string) {
+    return this.userRepository.findOne({
+      where: { email },
+      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt', 'gem'],
+    });
   }
 
   async update(
@@ -206,16 +223,36 @@ export class UsersService {
   async getProfile(currentUserId: string) {
     const user = await this.userRepository.findOne({
       where: { id: currentUserId },
-      relations: ['wallets'],
-      select: ['id', 'name', 'email', 'gem', 'role', 'isActive', 'lastLoginAt', 'lastDailyRewardClaimDate', 'createdAt', 'updatedAt'],
+      // Don't load wallets relation if table doesn't exist - make it optional
+      // relations: ['wallets'],
+      // Include all fields including stampsCollected
+      select: [
+        'id',
+        'name',
+        'email',
+        'gem',
+        'role',
+        'isActive',
+        'lastLoginAt',
+        'stampsCollected',
+        'lastStampClaimDate',
+        'firstStampClaimDate',
+        'createdAt',
+        'updatedAt',
+      ],
     });
 
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    console.log(`✅ Profile fetched for user ${currentUserId} with ${user.wallets?.length || 0} wallets`);
-    return user;
+    console.log(`✅ Profile fetched for user ${currentUserId} with ${user.stampsCollected || 0} stamps`);
+    
+    // Return user without wallets (table doesn't exist yet)
+    return {
+      ...user,
+      wallets: [], // Return empty array for wallets
+    };
   }
 
   async getTopGemHolders(limit = 10, currentUserRole: UserRole) {
@@ -332,35 +369,44 @@ export class UsersService {
       }
     });
 
-    // Get recent wallet additions (last 7 days)
-    const recentWallets = await this.walletRepository.find({
-      where: {
-        createdAt: MoreThan(sevenDaysAgo),
-      },
-      relations: ['user'],
-      select: {
-        id: true,
-        createdAt: true,
-        user: {
-          id: true,
-          email: true,
-          name: true,
+    // Get recent wallet additions (last 7 days) - Skip if wallets table doesn't exist
+    try {
+      const recentWallets = await this.walletRepository.find({
+        where: {
+          createdAt: MoreThan(sevenDaysAgo),
         },
-      },
-      order: { createdAt: 'DESC' },
-      take: limit,
-    });
+        relations: ['user'],
+        select: {
+          id: true,
+          createdAt: true,
+          user: {
+            id: true,
+            email: true,
+            name: true,
+          },
+        },
+        order: { createdAt: 'DESC' },
+        take: limit,
+      });
 
-    recentWallets.forEach((wallet) => {
-      if (wallet.user) {
-        activities.push({
-          type: 'wallet_added',
-          action: 'Wallet added',
-          user: { id: wallet.user.id, email: wallet.user.email, name: wallet.user.name },
-          timestamp: wallet.createdAt,
-        });
+      recentWallets.forEach((wallet) => {
+        if (wallet.user) {
+          activities.push({
+            type: 'wallet_added',
+            action: 'Wallet added',
+            user: { id: wallet.user.id, email: wallet.user.email, name: wallet.user.name },
+            timestamp: wallet.createdAt,
+          });
+        }
+      });
+    } catch (error: any) {
+      // Silently skip if wallets table doesn't exist
+      if (error?.message?.includes('relation "wallets" does not exist')) {
+        // Table doesn't exist, skip wallet activities
+      } else {
+        throw error;
       }
-    });
+    }
 
     // Get recent gem transactions (last 7 days)
     const recentTransactions = await this.gemTransactionRepository.find({

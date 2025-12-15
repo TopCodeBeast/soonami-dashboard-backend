@@ -92,12 +92,30 @@ export class StampsService {
     const currentTime = new Date();
     const currentDateGMT8 = this.getDateStringGMT8(currentTime);
 
+    // DEBUG LOGGING
+    console.log('🔍 [STAMP DEBUG] Claim Stamp Check:', {
+      userId,
+      currentStamps: user.stampsCollected,
+      currentTime: currentTime.toISOString(),
+      currentDateGMT8,
+      lastStampClaimDate: user.lastStampClaimDate?.toISOString(),
+      lastLoginAt: user.lastLoginAt?.toISOString(),
+      firstStampClaimDate: user.firstStampClaimDate?.toISOString(),
+    });
+
     // Check if current login is before midnight GMT+8
     const currentMidnightGMT8 = this.getMidnightGMT8(currentTime);
     const currentDayEnd = new Date(currentMidnightGMT8.getTime() + (24 * 60 * 60 * 1000));
     
+    console.log('🔍 [STAMP DEBUG] Midnight Check:', {
+      currentMidnightGMT8: currentMidnightGMT8.toISOString(),
+      currentDayEnd: currentDayEnd.toISOString(),
+      isAfterMidnight: currentTime.getTime() >= currentDayEnd.getTime(),
+    });
+    
     if (currentTime.getTime() >= currentDayEnd.getTime()) {
       // User logged in after midnight GMT+8 - they missed the day, reset stamps
+      console.log('⚠️ [STAMP DEBUG] After midnight GMT+8 - resetting stamps');
       user.stampsCollected = 0;
       user.lastStampClaimDate = null;
       user.firstStampClaimDate = null;
@@ -112,11 +130,20 @@ export class StampsService {
     }
 
     // Check if user already collected stamp today (same day in GMT+8)
+    // Logic: If it's a different day in GMT+8, user can claim (even if less than 24 hours)
+    // Example: Claim at 23:00 GMT+8, can claim again at 01:00 GMT+8 (next day)
     if (user.lastStampClaimDate) {
       const lastStampDateGMT8 = this.getDateStringGMT8(user.lastStampClaimDate);
       
+      console.log('🔍 [STAMP DEBUG] Date Comparison (GMT+8):', {
+        lastStampDateGMT8,
+        currentDateGMT8,
+        isSameDay: lastStampDateGMT8 === currentDateGMT8,
+      });
+      
       if (lastStampDateGMT8 === currentDateGMT8) {
-        // Already collected today - only first login of the day gets stamp
+        // Already collected today (same day in GMT+8) - only one stamp per day
+        console.log('⚠️ [STAMP DEBUG] Already collected today (GMT+8)');
         return {
           success: false,
           message: 'You have already collected your stamp today',
@@ -124,25 +151,19 @@ export class StampsService {
           stampsNeeded: this.MAX_STAMPS - (user.stampsCollected || 0),
         };
       }
-
-      // Check if 24 hours have passed since last login
-      if (user.lastLoginAt) {
-        const timeSinceLastLogin = currentTime.getTime() - user.lastLoginAt.getTime();
-        if (timeSinceLastLogin < this.HOURS_24) {
-          // Less than 24 hours since last login
-          const hoursRemaining = Math.ceil((this.HOURS_24 - timeSinceLastLogin) / (60 * 60 * 1000));
-          return {
-            success: false,
-            message: `You need to wait ${hoursRemaining} more hour${hoursRemaining !== 1 ? 's' : ''} before collecting your next stamp`,
-            stampsCollected: user.stampsCollected || 0,
-            stampsNeeded: this.MAX_STAMPS - (user.stampsCollected || 0),
-          };
-        }
-      }
+      
+      // Different day in GMT+8 - user can claim (no 24-hour cooldown needed)
+      console.log('✅ [STAMP DEBUG] Different day in GMT+8 - eligible to claim');
     }
 
     // User can collect stamp - increment count
     const newStampCount = (user.stampsCollected || 0) + 1;
+    console.log('✅ [STAMP DEBUG] User eligible - incrementing stamps:', {
+      oldCount: user.stampsCollected,
+      newCount: newStampCount,
+      willTriggerReward: newStampCount >= this.MAX_STAMPS,
+    });
+    
     user.stampsCollected = newStampCount;
     
     if (!user.firstStampClaimDate) {
@@ -156,15 +177,19 @@ export class StampsService {
 
     // Check if user reached 7 stamps
     if (newStampCount >= this.MAX_STAMPS) {
+      console.log('🎁 [STAMP DEBUG] REWARD TRIGGERED! User reached 7 stamps');
       // Give random reward
       const reward = this.selectRandomReward();
+      console.log('🎁 [STAMP DEBUG] Selected reward:', reward);
       rewardGiven = await this.awardReward(userId, reward.type, reward.amount);
+      console.log('✅ [STAMP DEBUG] Reward awarded:', rewardGiven);
 
       // Reset stamps after awarding reward
       user.stampsCollected = 0;
       user.lastStampClaimDate = null;
       user.firstStampClaimDate = null;
       await this.userRepository.save(user);
+      console.log('🔄 [STAMP DEBUG] Stamps reset to 0');
 
       return {
         success: true,
@@ -202,7 +227,7 @@ export class StampsService {
     const stampsCollected = user.stampsCollected || 0;
     const stampsNeeded = this.MAX_STAMPS - stampsCollected;
 
-    // Check if user can collect today
+    // Check if user can collect today (based on GMT+8 day, not 24-hour cooldown)
     let eligible = false;
     let message = '';
     let minutesUntilNext: number | undefined;
@@ -225,24 +250,19 @@ export class StampsService {
       const lastStampDateGMT8 = this.getDateStringGMT8(user.lastStampClaimDate);
       
       if (lastStampDateGMT8 === currentDateGMT8) {
-        // Already collected today
+        // Already collected today (same day in GMT+8)
         eligible = false;
-        message = 'You have already collected your stamp today. Come back tomorrow!';
-      } else if (user.lastLoginAt) {
-        // Check if 24 hours have passed since last login
-        const timeSinceLastLogin = currentTime.getTime() - user.lastLoginAt.getTime();
-        if (timeSinceLastLogin >= this.HOURS_24) {
-          eligible = true;
-          message = 'You can collect your stamp today!';
-        } else {
-          eligible = false;
-          const timeRemaining = this.HOURS_24 - timeSinceLastLogin;
-          minutesUntilNext = Math.ceil(timeRemaining / (60 * 1000));
-          secondsUntilNext = Math.ceil(timeRemaining / 1000);
-          const hoursRemaining = Math.ceil(timeRemaining / (60 * 60 * 1000));
-          message = `You need to wait ${hoursRemaining} more hour${hoursRemaining !== 1 ? 's' : ''} before collecting your next stamp`;
-        }
+        
+        // Calculate time until next day (midnight GMT+8)
+        const nextMidnightGMT8 = new Date(currentMidnightGMT8.getTime() + (24 * 60 * 60 * 1000));
+        const timeUntilNextDay = nextMidnightGMT8.getTime() - currentTime.getTime();
+        minutesUntilNext = Math.ceil(timeUntilNextDay / (60 * 1000));
+        secondsUntilNext = Math.ceil(timeUntilNextDay / 1000);
+        const hoursUntilMidnight = Math.ceil(timeUntilNextDay / (60 * 60 * 1000));
+        
+        message = `You have already collected your stamp today. Come back after midnight GMT+8 (in ${hoursUntilMidnight} hour${hoursUntilMidnight !== 1 ? 's' : ''})!`;
       } else {
+        // Different day in GMT+8 - eligible to claim (no 24-hour cooldown)
         eligible = true;
         message = 'You can collect your stamp today!';
       }
@@ -337,5 +357,47 @@ export class StampsService {
       type: rewardType as string,
       amount,
     };
+  }
+
+  /**
+   * Get reward history for user
+   */
+  async getRewardHistory(userId: string): Promise<Array<{
+    id: string;
+    rewardType: RewardType;
+    amount: number;
+    createdAt: Date;
+    rewardName: string;
+  }>> {
+    const rewards = await this.stampRewardRepository.find({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+    });
+
+    return rewards.map(reward => {
+      let rewardName = '';
+      switch (reward.rewardType) {
+        case RewardType.GEMS:
+          rewardName = 'Gems';
+          break;
+        case RewardType.BACKFLIP:
+          rewardName = 'Backflip';
+          break;
+        case RewardType.CHOICE_PRIORITY:
+          rewardName = 'Choice Priority';
+          break;
+        case RewardType.REKALL_TOKEN_AIRDROP:
+          rewardName = 'Rekall Token Airdrop';
+          break;
+      }
+
+      return {
+        id: reward.id,
+        rewardType: reward.rewardType,
+        amount: reward.amount,
+        createdAt: reward.createdAt,
+        rewardName,
+      };
+    });
   }
 }
