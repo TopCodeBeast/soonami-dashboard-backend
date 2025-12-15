@@ -138,5 +138,36 @@ export class UserItemsService {
     const item = await this.getUserItem(userId, itemType);
     return item ? item.amount : 0;
   }
+
+  /**
+   * Save item usage history in stamp_rewards table
+   * Negative amount indicates item was used (spent)
+   */
+  async saveItemUsageHistory(
+    userId: string,
+    itemType: UserItemType,
+    amount: number, // Should be negative (e.g., -1)
+  ): Promise<StampReward> {
+    // Map UserItemType to RewardType
+    const itemTypeToRewardType: Record<UserItemType, RewardType> = {
+      [UserItemType.BACKFLIP]: RewardType.BACKFLIP,
+      [UserItemType.CHOICE_PRIORITY]: RewardType.CHOICE_PRIORITY,
+      [UserItemType.REKALL_TOKEN_AIRDROP]: RewardType.REKALL_TOKEN_AIRDROP,
+    };
+
+    const rewardType = itemTypeToRewardType[itemType];
+    if (!rewardType) {
+      throw new Error(`Invalid item type for history: ${itemType}`);
+    }
+
+    // Create a stamp_reward record with negative amount to indicate usage
+    const usageHistory = this.stampRewardRepository.create({
+      userId,
+      rewardType,
+      amount, // Negative amount (e.g., -1)
+    });
+
+    return this.stampRewardRepository.save(usageHistory);
+  }
 }
 

@@ -223,6 +223,9 @@ export class UsersController {
     // Decrement amount by 1 (pass negative amount to subtract)
     const updatedItem = await this.userItemsService.addItem(req.user.userId, itemType, -1, 'Used from store');
     
+    // Save usage history in stamp_rewards table (negative amount indicates usage)
+    await this.userItemsService.saveItemUsageHistory(req.user.userId, itemType, -1);
+    
     return {
       success: true,
       itemType: body.itemType,
