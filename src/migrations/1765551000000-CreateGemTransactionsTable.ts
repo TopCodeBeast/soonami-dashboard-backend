@@ -12,7 +12,7 @@ export class CreateGemTransactionsTable1765551000000 implements MigrationInterfa
     `);
 
     // Check if gem_transactions table already exists
-    const gemTransactionsTable = await queryRunner.getTable('gem_transactions');
+    let gemTransactionsTable = await queryRunner.getTable('gem_transactions');
     const tableExists = !!gemTransactionsTable;
 
     // Create gem_transactions table (if it doesn't exist)
@@ -61,6 +61,8 @@ export class CreateGemTransactionsTable1765551000000 implements MigrationInterfa
         }),
         true,
       );
+      // Refetch table after creation
+      gemTransactionsTable = await queryRunner.getTable('gem_transactions');
     } else {
       console.log('ℹ️  gem_transactions table already exists - cleaning up orphaned records...');
       // Clean up orphaned records (transactions with user_id that doesn't exist in users table)
@@ -72,9 +74,8 @@ export class CreateGemTransactionsTable1765551000000 implements MigrationInterfa
     }
 
     // Check if foreign key already exists before creating it
-    const currentTable = await queryRunner.getTable('gem_transactions');
-    if (currentTable) {
-      const existingForeignKey = currentTable.foreignKeys.find(
+    if (gemTransactionsTable) {
+      const existingForeignKey = gemTransactionsTable.foreignKeys.find(
         (fk) => fk.columnNames.indexOf('user_id') !== -1 && fk.referencedTableName === 'users',
       );
       
@@ -90,13 +91,14 @@ export class CreateGemTransactionsTable1765551000000 implements MigrationInterfa
           }),
         );
         console.log('✅ Created foreign key constraint on gem_transactions.user_id');
+        // Refetch table after adding foreign key to get updated metadata
+        gemTransactionsTable = await queryRunner.getTable('gem_transactions');
       } else {
         console.log('ℹ️  Foreign key constraint already exists - skipping');
       }
     }
 
     // Create index on user_id for faster queries
-    const gemTransactionsTable = await queryRunner.getTable('gem_transactions');
     if (gemTransactionsTable) {
       const existingIndex = gemTransactionsTable.indices.find(
         (idx) => idx.name === 'IDX_gem_transactions_user_id',
