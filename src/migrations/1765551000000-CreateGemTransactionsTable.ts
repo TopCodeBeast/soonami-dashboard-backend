@@ -11,62 +11,89 @@ export class CreateGemTransactionsTable1765551000000 implements MigrationInterfa
       END $$;
     `);
 
-    // Create gem_transactions table
-    await queryRunner.createTable(
-      new Table({
-        name: 'gem_transactions',
-        columns: [
-          {
-            name: 'id',
-            type: 'uuid',
-            isPrimary: true,
-            generationStrategy: 'uuid',
-            default: 'uuid_generate_v4()',
-          },
-          {
-            name: 'user_id',
-            type: 'uuid',
-          },
-          {
-            name: 'change',
-            type: 'integer',
-          },
-          {
-            name: 'type',
-            type: 'enum',
-            enum: ['earn', 'spend'],
-            enumName: 'gem_transaction_type_enum',
-          },
-          {
-            name: 'reason',
-            type: 'varchar',
-            isNullable: true,
-          },
-          {
-            name: 'metadata',
-            type: 'text',
-            isNullable: true,
-          },
-          {
-            name: 'createdAt',
-            type: 'timestamp',
-            default: 'CURRENT_TIMESTAMP',
-          },
-        ],
-      }),
-      true,
-    );
+    // Check if gem_transactions table already exists
+    const gemTransactionsTable = await queryRunner.getTable('gem_transactions');
+    const tableExists = !!gemTransactionsTable;
 
-    // Create foreign key
-    await queryRunner.createForeignKey(
-      'gem_transactions',
-      new TableForeignKey({
-        columnNames: ['user_id'],
-        referencedColumnNames: ['id'],
-        referencedTableName: 'users',
-        onDelete: 'CASCADE',
-      }),
-    );
+    // Create gem_transactions table (if it doesn't exist)
+    if (!tableExists) {
+      await queryRunner.createTable(
+        new Table({
+          name: 'gem_transactions',
+          columns: [
+            {
+              name: 'id',
+              type: 'uuid',
+              isPrimary: true,
+              generationStrategy: 'uuid',
+              default: 'uuid_generate_v4()',
+            },
+            {
+              name: 'user_id',
+              type: 'uuid',
+            },
+            {
+              name: 'change',
+              type: 'integer',
+            },
+            {
+              name: 'type',
+              type: 'enum',
+              enum: ['earn', 'spend'],
+              enumName: 'gem_transaction_type_enum',
+            },
+            {
+              name: 'reason',
+              type: 'varchar',
+              isNullable: true,
+            },
+            {
+              name: 'metadata',
+              type: 'text',
+              isNullable: true,
+            },
+            {
+              name: 'createdAt',
+              type: 'timestamp',
+              default: 'CURRENT_TIMESTAMP',
+            },
+          ],
+        }),
+        true,
+      );
+    } else {
+      console.log('ℹ️  gem_transactions table already exists - cleaning up orphaned records...');
+      // Clean up orphaned records (transactions with user_id that doesn't exist in users table)
+      await queryRunner.query(`
+        DELETE FROM gem_transactions
+        WHERE user_id NOT IN (SELECT id FROM users)
+      `);
+      console.log('✅ Cleaned up orphaned gem_transactions records');
+    }
+
+    // Check if foreign key already exists before creating it
+    const currentTable = await queryRunner.getTable('gem_transactions');
+    if (currentTable) {
+      const existingForeignKey = currentTable.foreignKeys.find(
+        (fk) => fk.columnNames.indexOf('user_id') !== -1 && fk.referencedTableName === 'users',
+      );
+      
+      if (!existingForeignKey) {
+        // Create foreign key
+        await queryRunner.createForeignKey(
+          'gem_transactions',
+          new TableForeignKey({
+            columnNames: ['user_id'],
+            referencedColumnNames: ['id'],
+            referencedTableName: 'users',
+            onDelete: 'CASCADE',
+          }),
+        );
+        console.log('✅ Created foreign key constraint on gem_transactions.user_id');
+      } else {
+        console.log('ℹ️  Foreign key constraint already exists - skipping');
+      }
+    }
 
     // Create index on user_id for faster queries
     const gemTransactionsTable = await queryRunner.getTable('gem_transactions');
