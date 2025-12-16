@@ -140,6 +140,32 @@ export class UserItemsService {
   }
 
   /**
+   * Get item amount from stamp_rewards table (fallback when not in user_items)
+   */
+  async getItemAmountFromRewards(userId: string, itemType: UserItemType): Promise<number> {
+    // Map UserItemType to RewardType
+    const itemTypeToRewardType: Record<UserItemType, RewardType> = {
+      [UserItemType.BACKFLIP]: RewardType.BACKFLIP,
+      [UserItemType.CHOICE_PRIORITY]: RewardType.CHOICE_PRIORITY,
+      [UserItemType.REKALL_TOKEN_AIRDROP]: RewardType.REKALL_TOKEN_AIRDROP,
+    };
+
+    const rewardType = itemTypeToRewardType[itemType];
+    if (!rewardType) {
+      return 0;
+    }
+
+    // Get all stamp rewards for this user and reward type
+    const stampRewards = await this.stampRewardRepository.find({
+      where: { userId, rewardType },
+    });
+
+    // Aggregate amounts (positive = earned, negative = used)
+    const totalAmount = stampRewards.reduce((sum, reward) => sum + reward.amount, 0);
+    return Math.max(0, totalAmount); // Return 0 if negative (all used)
+  }
+
+  /**
    * Save item usage history in stamp_rewards table
    * Negative amount indicates item was used (spent)
    */

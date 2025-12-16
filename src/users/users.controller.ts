@@ -215,12 +215,21 @@ export class UsersController {
       throw new BadRequestException(`Invalid item type: ${body.itemType}`);
     }
     
-    const userItem = await this.userItemsService.getUserItem(req.user.userId, itemType);
+    // Check if item exists in user_items table
+    let userItem = await this.userItemsService.getUserItem(req.user.userId, itemType);
+    
+    // If not in user_items, check stamp_rewards and create it in user_items
     if (!userItem || userItem.amount <= 0) {
-      throw new BadRequestException('You do not have this item');
+      const currentAmount = await this.userItemsService.getItemAmountFromRewards(req.user.userId, itemType);
+      if (currentAmount <= 0) {
+        throw new BadRequestException('You do not have this item');
+      }
+      
+      // Create item in user_items table with the amount from stamp_rewards
+      userItem = await this.userItemsService.addItem(req.user.userId, itemType, currentAmount, 'Migrated from stamp rewards');
     }
     
-    // Decrement amount by 1 (pass negative amount to subtract)
+    // Now decrement the amount by 1
     const updatedItem = await this.userItemsService.addItem(req.user.userId, itemType, -1, 'Used from store');
     
     // Save usage history in stamp_rewards table (negative amount indicates usage)
