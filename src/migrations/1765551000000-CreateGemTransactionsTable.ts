@@ -71,6 +71,8 @@ export class CreateGemTransactionsTable1765551000000 implements MigrationInterfa
         WHERE user_id NOT IN (SELECT id FROM users)
       `);
       console.log('✅ Cleaned up orphaned gem_transactions records');
+      // Refetch table after cleanup
+      gemTransactionsTable = await queryRunner.getTable('gem_transactions');
     }
 
     // Check if foreign key already exists before creating it
@@ -91,7 +93,7 @@ export class CreateGemTransactionsTable1765551000000 implements MigrationInterfa
           }),
         );
         console.log('✅ Created foreign key constraint on gem_transactions.user_id');
-        // Refetch table after adding foreign key to get updated metadata
+        // Refetch table after adding foreign key
         gemTransactionsTable = await queryRunner.getTable('gem_transactions');
       } else {
         console.log('ℹ️  Foreign key constraint already exists - skipping');

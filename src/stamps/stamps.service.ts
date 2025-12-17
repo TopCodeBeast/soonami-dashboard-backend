@@ -103,19 +103,25 @@ export class StampsService {
       firstStampClaimDate: user.firstStampClaimDate?.toISOString(),
     });
 
-    // Check if current login is before midnight GMT+8
+    // Check if current login is before midnight GMT+8 of the NEXT day
+    // If user logs in after midnight GMT+8, they missed the previous day and stamps should reset
     const currentMidnightGMT8 = this.getMidnightGMT8(currentTime);
-    const currentDayEnd = new Date(currentMidnightGMT8.getTime() + (24 * 60 * 60 * 1000));
+    const nextMidnightGMT8 = new Date(currentMidnightGMT8.getTime() + (24 * 60 * 60 * 1000));
     
     console.log('🔍 [STAMP DEBUG] Midnight Check:', {
+      currentTime: currentTime.toISOString(),
       currentMidnightGMT8: currentMidnightGMT8.toISOString(),
-      currentDayEnd: currentDayEnd.toISOString(),
-      isAfterMidnight: currentTime.getTime() >= currentDayEnd.getTime(),
+      nextMidnightGMT8: nextMidnightGMT8.toISOString(),
+      isAfterNextMidnight: currentTime.getTime() >= nextMidnightGMT8.getTime(),
     });
     
-    if (currentTime.getTime() >= currentDayEnd.getTime()) {
-      // User logged in after midnight GMT+8 - they missed the day, reset stamps
-      console.log('⚠️ [STAMP DEBUG] After midnight GMT+8 - resetting stamps');
+    // Only reset if user logged in AFTER midnight GMT+8 of the NEXT day
+    // This means they completely missed a day (logged in on day N+1 after midnight)
+    // For example: If it's 3am GMT+8 on Jan 2, they're still within Jan 2, so don't reset
+    // But if they logged in at 1am GMT+8 on Jan 3 (after missing Jan 2), reset stamps
+    if (currentTime.getTime() >= nextMidnightGMT8.getTime()) {
+      // User logged in after midnight GMT+8 of the next day - they missed a day, reset stamps
+      console.log('⚠️ [STAMP DEBUG] After next midnight GMT+8 - resetting stamps');
       user.stampsCollected = 0;
       user.lastStampClaimDate = null;
       user.firstStampClaimDate = null;
