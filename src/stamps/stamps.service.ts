@@ -1,11 +1,12 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User } from '../users/entities/user.entity';
+import { User, UserRole } from '../users/entities/user.entity';
 import { GemTransactionsService } from '../users/gem-transactions.service';
 import { UserItemsService } from '../users/user-items.service';
 import { UserItemType } from '../users/entities/user-item.entity';
 import { StampReward, RewardType } from './entities/stamp-reward.entity';
+import { RoleHierarchy } from '../users/utils/role-hierarchy';
 
 export { RewardType };
 
@@ -405,5 +406,44 @@ export class StampsService {
         rewardName,
       };
     });
+  }
+
+  /**
+   * Setup user stamps to 6 for testing (Admin/Manager only)
+   * Sets user to 6 stamps and makes them eligible to claim the 7th
+   */
+  async setupStampsTo6(targetUserId: string, currentUserRole: UserRole): Promise<{
+    success: boolean;
+    message: string;
+    stampsCollected: number;
+  }> {
+    // Check if current user is admin or manager
+    if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole)) {
+      throw new ForbiddenException('Only admins and managers can set stamps for testing');
+    }
+
+    const user = await this.userRepository.findOne({ where: { id: targetUserId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const now = new Date();
+    const yesterdayGMT8 = new Date(now.getTime() - (24 * 60 * 60 * 1000)); // Yesterday
+    const sixDaysAgo = new Date(now.getTime() - (6 * 24 * 60 * 60 * 1000));
+
+    // Set to 6 stamps and make eligible (yesterday in GMT+8)
+    // Logic: If lastStampClaimDate is yesterday (GMT+8), user can claim today
+    user.stampsCollected = 6;
+    user.lastStampClaimDate = yesterdayGMT8; // Set to yesterday so today is a different day
+    user.lastLoginAt = yesterdayGMT8; // Keep for reference
+    user.firstStampClaimDate = sixDaysAgo;
+
+    await this.userRepository.save(user);
+
+    return {
+      success: true,
+      message: 'User stamps set to 6. User is now eligible to claim the 7th stamp.',
+      stampsCollected: user.stampsCollected,
+    };
   }
 }

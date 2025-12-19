@@ -1,4 +1,4 @@
-import { Controller, Get, Post, UseGuards, Request, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, UseGuards, Request, HttpCode, HttpStatus, Body, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { StampsService } from './stamps.service';
@@ -34,5 +34,18 @@ export class StampsController {
   @ApiResponse({ status: 200, description: 'List of stamp rewards' })
   async getRewardHistory(@Request() req: any) {
     return this.stampsService.getRewardHistory(req.user.userId);
+  }
+
+  @Post('setup-to-6/:userId')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Set user stamps to 6 for testing (Admin/Manager only)' })
+  @ApiResponse({ status: 200, description: 'Stamps set to 6 successfully' })
+  @ApiResponse({ status: 403, description: 'Forbidden - Admin/Manager access required' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async setupStampsTo6(
+    @Param('userId') userId: string,
+    @Request() req: any,
+  ) {
+    return this.stampsService.setupStampsTo6(userId, req.user.role);
   }
 }
