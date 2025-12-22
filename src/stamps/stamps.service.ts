@@ -136,6 +136,29 @@ export class StampsService {
       };
     }
 
+    // Special handling: If user has 7 stamps and it's a new day, reset to 0 for Day 1
+    if (user.stampsCollected >= this.MAX_STAMPS && user.lastStampClaimDate) {
+      const lastStampDateGMT8 = this.getDateStringGMT8(user.lastStampClaimDate);
+      
+      // If it's a different day, reset to 0 and allow Day 1 claim
+      if (lastStampDateGMT8 !== currentDateGMT8) {
+        console.log('🔄 [STAMP DEBUG] User has 7 stamps and it\'s a new day - resetting to 0 for Day 1');
+        user.stampsCollected = 0;
+        user.firstStampClaimDate = null;
+        user.lastStampClaimDate = null;
+        await this.userRepository.save(user);
+      } else {
+        // Same day with 7 stamps - already completed Day 7, can't claim until next day
+        console.log('⚠️ [STAMP DEBUG] User has 7 stamps on same day - already completed Day 7');
+        return {
+          success: false,
+          message: 'You\'ve completed Day 7! Come back tomorrow to start Day 1.',
+          stampsCollected: this.MAX_STAMPS,
+          stampsNeeded: 0,
+        };
+      }
+    }
+
     // Check if user already collected stamp today (same day in GMT+8)
     // Logic: If it's a different day in GMT+8, user can claim (even if less than 24 hours)
     // Example: Claim at 23:00 GMT+8, can claim again at 01:00 GMT+8 (next day)
@@ -191,18 +214,18 @@ export class StampsService {
       rewardGiven = await this.awardReward(userId, reward.type, reward.amount);
       console.log('✅ [STAMP DEBUG] Reward awarded:', rewardGiven);
 
-      // Reset stamps after awarding reward
-      user.stampsCollected = 0;
-      user.lastStampClaimDate = null;
-      user.firstStampClaimDate = null;
+      // Keep stamps at 7 (don't reset) - user will see Day 7 filled
+      // Stamps will reset to 0 on the next day when they can claim Day 1
+      user.stampsCollected = this.MAX_STAMPS;
+      // Keep lastStampClaimDate so we can check if it's a new day
       await this.userRepository.save(user);
-      console.log('🔄 [STAMP DEBUG] Stamps reset to 0');
+      console.log('✅ [STAMP DEBUG] Stamps kept at 7 - will reset on next day');
 
       return {
         success: true,
         message: `Congratulations! You collected 7 stamps and received ${rewardGiven.amount} ${rewardGiven.name}!`,
-        stampsCollected: 0,
-        stampsNeeded: this.MAX_STAMPS,
+        stampsCollected: this.MAX_STAMPS,
+        stampsNeeded: 0,
         reward: rewardGiven,
       };
     }
@@ -231,7 +254,27 @@ export class StampsService {
       throw new NotFoundException('User not found');
     }
 
-    const stampsCollected = user.stampsCollected || 0;
+    let stampsCollected = user.stampsCollected || 0;
+    const currentTime = new Date();
+    const currentDateGMT8 = this.getDateStringGMT8(currentTime);
+    const currentMidnightGMT8 = this.getMidnightGMT8(currentTime);
+    const currentDayEnd = new Date(currentMidnightGMT8.getTime() + (24 * 60 * 60 * 1000));
+
+    // Special handling: If user has 7 stamps and it's a new day, reset to 0 for Day 1
+    if (stampsCollected >= this.MAX_STAMPS && user.lastStampClaimDate) {
+      const lastStampDateGMT8 = this.getDateStringGMT8(user.lastStampClaimDate);
+      
+      // If it's a different day, reset to 0 and allow Day 1 claim
+      if (lastStampDateGMT8 !== currentDateGMT8) {
+        console.log('🔄 [STAMP DEBUG] User has 7 stamps and it\'s a new day - resetting to 0 for Day 1');
+        user.stampsCollected = 0;
+        user.firstStampClaimDate = null;
+        user.lastStampClaimDate = null;
+        await this.userRepository.save(user);
+        stampsCollected = 0;
+      }
+    }
+
     const stampsNeeded = this.MAX_STAMPS - stampsCollected;
 
     // Check if user can collect today (based on GMT+8 day, not 24-hour cooldown)
@@ -239,11 +282,6 @@ export class StampsService {
     let message = '';
     let minutesUntilNext: number | undefined;
     let secondsUntilNext: number | undefined;
-
-    const currentTime = new Date();
-    const currentDateGMT8 = this.getDateStringGMT8(currentTime);
-    const currentMidnightGMT8 = this.getMidnightGMT8(currentTime);
-    const currentDayEnd = new Date(currentMidnightGMT8.getTime() + (24 * 60 * 60 * 1000));
 
     // Check if current time is after midnight GMT+8
     if (currentTime.getTime() >= currentDayEnd.getTime()) {
@@ -258,16 +296,28 @@ export class StampsService {
       
       if (lastStampDateGMT8 === currentDateGMT8) {
         // Already collected today (same day in GMT+8)
-        eligible = false;
-        
-        // Calculate time until next day (midnight GMT+8)
-        const nextMidnightGMT8 = new Date(currentMidnightGMT8.getTime() + (24 * 60 * 60 * 1000));
-        const timeUntilNextDay = nextMidnightGMT8.getTime() - currentTime.getTime();
-        minutesUntilNext = Math.ceil(timeUntilNextDay / (60 * 1000));
-        secondsUntilNext = Math.ceil(timeUntilNextDay / 1000);
-        const hoursUntilMidnight = Math.ceil(timeUntilNextDay / (60 * 60 * 1000));
-        
-        message = `You have already collected your stamp today. Come back after midnight GMT+8 (in ${hoursUntilMidnight} hour${hoursUntilMidnight !== 1 ? 's' : ''})!`;
+        // If user has 7 stamps, they completed Day 7 and need to wait until next day
+        if (stampsCollected >= this.MAX_STAMPS) {
+          eligible = false;
+          // Calculate time until next day (midnight GMT+8)
+          const nextMidnightGMT8 = new Date(currentMidnightGMT8.getTime() + (24 * 60 * 60 * 1000));
+          const timeUntilNextDay = nextMidnightGMT8.getTime() - currentTime.getTime();
+          minutesUntilNext = Math.ceil(timeUntilNextDay / (60 * 1000));
+          secondsUntilNext = Math.ceil(timeUntilNextDay / 1000);
+          const hoursUntilMidnight = Math.ceil(timeUntilNextDay / (60 * 60 * 1000));
+          
+          message = `You've completed Day 7! Come back tomorrow (after midnight GMT+8) to start Day 1.`;
+        } else {
+          eligible = false;
+          // Calculate time until next day (midnight GMT+8)
+          const nextMidnightGMT8 = new Date(currentMidnightGMT8.getTime() + (24 * 60 * 60 * 1000));
+          const timeUntilNextDay = nextMidnightGMT8.getTime() - currentTime.getTime();
+          minutesUntilNext = Math.ceil(timeUntilNextDay / (60 * 1000));
+          secondsUntilNext = Math.ceil(timeUntilNextDay / 1000);
+          const hoursUntilMidnight = Math.ceil(timeUntilNextDay / (60 * 60 * 1000));
+          
+          message = `You have already collected your stamp today. Come back after midnight GMT+8 (in ${hoursUntilMidnight} hour${hoursUntilMidnight !== 1 ? 's' : ''})!`;
+        }
       } else {
         // Different day in GMT+8 - eligible to claim (no 24-hour cooldown)
         eligible = true;
