@@ -8,6 +8,7 @@ import { WalletsModule } from './wallets/wallets.module';
 import { DatabaseSeederModule } from './database-seeder/database-seeder.module';
 import { StripePaymentsModule } from './stripe-payments/stripe-payments.module';
 import { StampsModule } from './stamps/stamps.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 import { User } from './users/entities/user.entity';
 import { Wallet } from './wallets/entities/wallet.entity';
 import { GemTransaction } from './users/entities/gem-transaction.entity';
@@ -45,6 +46,7 @@ import { StampReward } from './stamps/entities/stamp-reward.entity';
     DatabaseSeederModule,
     StripePaymentsModule,
     StampsModule,
+    AnalyticsModule,
   ],
 })
 export class AppModule {}
