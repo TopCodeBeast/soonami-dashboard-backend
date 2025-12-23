@@ -5,6 +5,14 @@ import axios from 'axios';
 export class AnalyticsService {
   private readonly pythonBackendUrl = process.env.PYTHON_BACKEND_URL || 'http://localhost:8005';
 
+  constructor() {
+    if (!process.env.PYTHON_BACKEND_URL) {
+      console.warn('⚠️ PYTHON_BACKEND_URL not set in environment variables. Defaulting to http://localhost:8005');
+    } else {
+      console.log(`✅ Analytics service configured to use Python backend: ${this.pythonBackendUrl}`);
+    }
+  }
+
   async queryAnalytics(userId: string, message: string, userRole: string, accessToken?: string) {
     try {
       // Forward the request to Python backend
@@ -46,7 +54,10 @@ export class AnalyticsService {
         
         throw new Error(errorMessage);
       }
-      throw new Error(`Failed to connect to analytics service: ${error.message}`);
+      const errorMsg = error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND'
+        ? `Failed to connect to Python backend at ${this.pythonBackendUrl}. Please check PYTHON_BACKEND_URL environment variable.`
+        : `Failed to connect to analytics service: ${error.message}`;
+      throw new Error(errorMsg);
     }
   }
 }
