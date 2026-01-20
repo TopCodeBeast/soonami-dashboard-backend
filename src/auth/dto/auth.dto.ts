@@ -1,5 +1,6 @@
-import { IsEmail, IsString, MinLength, IsOptional, IsNumber, Length } from 'class-validator';
+import { IsEmail, IsString, MinLength, IsOptional, IsNumber, Length, MaxLength } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { IsValidName } from '../utils/name-validator.decorator';
 
 export class RequestCodeDto {
   @ApiProperty({ example: 'user@example.com' })
@@ -17,10 +18,12 @@ export class VerifyCodeDto {
   @Length(6, 6)
   code: string;
 
-  @ApiProperty({ example: 'John Doe', required: false })
+  @ApiProperty({ example: 'John Doe', required: false, maxLength: 40 })
   @IsOptional()
   @IsString()
   @MinLength(1)
+  @MaxLength(40)
+  @IsValidName({ message: 'Name must be 40 characters or less, contain only letters, numbers, and spaces, and cannot contain inappropriate content' })
   name?: string;
 }
 
@@ -52,9 +55,12 @@ export class RegisterDto {
   @IsEmail()
   email: string;
 
-  @ApiProperty({ example: 'John Doe', required: false })
+  @ApiProperty({ example: 'John Doe', required: false, maxLength: 40 })
   @IsOptional()
   @IsString()
+  @MinLength(1)
+  @MaxLength(40)
+  @IsValidName({ message: 'Name must be 40 characters or less, contain only letters, numbers, and spaces, and cannot contain inappropriate content' })
   name?: string;
 
   @ApiProperty({ example: 100, required: false, description: 'Initial gem amount' })

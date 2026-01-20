@@ -13,6 +13,7 @@ import { LoginDto, RegisterDto, ChangePasswordDto, RequestCodeDto, VerifyCodeDto
 import { EmailService } from './services/email.service';
 import { CodeStorageService } from './services/code-storage.service';
 import { StampsService } from '../stamps/stamps.service';
+import { validateName } from './utils/name-validator';
 
 @Injectable()
 export class AuthService {
@@ -166,10 +167,14 @@ export class AuthService {
     
     if (isFirstLogin) {
       // First-time login - need name to create user
-      if (!name || name.length < 1 || name.length > 100) {
-        throw new BadRequestException(
-          'Name is required for first-time registration (1-100 characters)',
-        );
+      if (!name) {
+        throw new BadRequestException('Name is required for first-time registration');
+      }
+      
+      // Validate name: max 40 chars, alphanumeric + spaces only, no profanity
+      const nameValidation = validateName(name);
+      if (!nameValidation.valid) {
+        throw new BadRequestException(nameValidation.error || 'Invalid name');
       }
       
       // Create user (no password needed - using email verification code login)
