@@ -7,12 +7,16 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { EmailService } from './services/email.service';
 import { CodeStorageService } from './services/code-storage.service';
+import { TokenService } from './services/token.service';
+import { TokenCleanupService } from './token-cleanup.service';
+import { TokenValidationGuard } from './token-validation.guard';
 import { User } from '../users/entities/user.entity';
+import { UserToken } from './entities/user-token.entity';
 import { StampsModule } from '../stamps/stamps.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User]),
+    TypeOrmModule.forFeature([User, UserToken]),
     PassportModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET,
@@ -21,7 +25,15 @@ import { StampsModule } from '../stamps/stamps.module';
     StampsModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, EmailService, CodeStorageService],
-  exports: [AuthService],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    EmailService,
+    CodeStorageService,
+    TokenService,
+    TokenCleanupService,
+    TokenValidationGuard,
+  ],
+  exports: [AuthService, TokenService],
 })
 export class AuthModule {}

@@ -9,9 +9,10 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User, UserRole } from '../users/entities/user.entity';
-import { LoginDto, RegisterDto, ChangePasswordDto, RequestCodeDto, VerifyCodeDto, CheckUserDto } from './dto/auth.dto';
+import { LoginDto, RegisterDto, ChangePasswordDto, RequestCodeDto, VerifyCodeDto, CheckUserDto, CheckTokenDto } from './dto/auth.dto';
 import { EmailService } from './services/email.service';
 import { CodeStorageService } from './services/code-storage.service';
+import { TokenService } from './services/token.service';
 import { StampsService } from '../stamps/stamps.service';
 import { validateName } from './utils/name-validator';
 
@@ -23,6 +24,7 @@ export class AuthService {
     private jwtService: JwtService,
     private emailService: EmailService,
     private codeStorageService: CodeStorageService,
+    private tokenService: TokenService,
     private stampsService: StampsService,
   ) {}
 
@@ -148,7 +150,7 @@ export class AuthService {
     return { message: 'Verification code sent to your email' };
   }
 
-  async verifyCode(verifyCodeDto: VerifyCodeDto) {
+  async verifyCode(verifyCodeDto: VerifyCodeDto, frontendService?: string) {
     const email = verifyCodeDto.email.toLowerCase().trim();
     const code = verifyCodeDto.code.trim();
     const name = verifyCodeDto.name?.trim();
@@ -158,12 +160,25 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired verification code');
     }
     
-    // Check if user exists
+    // Check if user exists first (needed to get userId for token check)
     const existingUser = await this.userRepository.findOne({
       where: { email },
     });
     
     const isFirstLogin = !existingUser;
+    
+    // Check for existing active tokens for this user (by email/username)
+    // If active token exists, BLOCK login - don't allow multiple sessions
+    console.log(`[LOGIN CHECK] Checking for active tokens before login - email: ${email}, userId: ${existingUser?.id || 'N/A'}`);
+    const hasActiveToken = existingUser 
+      ? await this.tokenService.hasActiveToken(email, existingUser.id)
+      : await this.tokenService.hasActiveToken(email);
+    
+    if (hasActiveToken) {
+      console.log(`[LOGIN CHECK] ❌ BLOCKED: Active token found for ${email} - preventing second login`);
+      throw new ConflictException('Another session is already logged in. Please close other sessions or try again later.');
+    }
+    console.log(`[LOGIN CHECK] ✅ ALLOWED: No active tokens found for ${email}`);
     
     if (isFirstLogin) {
       // First-time login - need name to create user
@@ -242,6 +257,20 @@ export class AuthService {
         secret: process.env.JWT_REFRESH_SECRET,
         expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
       });
+
+      // Store token in database for tracking
+      // This will check for active tokens and throw error if found
+      console.log(`[LOGIN] Creating token for user: ${savedUser.id}, email: ${email}`);
+      try {
+        await this.tokenService.createToken(savedUser.id, email, accessToken, frontendService);
+        console.log(`[LOGIN] ✅ Token created successfully for ${email}`);
+      } catch (error: any) {
+        if (error.message.includes('Active token exists')) {
+          console.log(`[LOGIN] ❌ Token creation blocked - active token exists for ${email}`);
+          throw new ConflictException('Another session is already logged in. Please close other sessions or try again later.');
+        }
+        throw error;
+      }
       
       return {
         accessToken,
@@ -329,6 +358,20 @@ export class AuthService {
         secret: process.env.JWT_REFRESH_SECRET,
         expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
       });
+
+      // Store token in database for tracking
+      // This will check for active tokens and throw error if found
+      console.log(`[LOGIN] Creating token for existing user: ${existingUser.id}, email: ${email}`);
+      try {
+        await this.tokenService.createToken(existingUser.id, email, accessToken, frontendService);
+        console.log(`[LOGIN] ✅ Token created successfully for ${email}`);
+      } catch (error: any) {
+        if (error.message.includes('Active token exists')) {
+          console.log(`[LOGIN] ❌ Token creation blocked - active token exists for ${email}`);
+          throw new ConflictException('Another session is already logged in. Please close other sessions or try again later.');
+        }
+        throw error;
+      }
       
       return {
         accessToken,
@@ -374,9 +417,10 @@ export class AuthService {
     };
   }
 
-  async directLoginForAdmin(email: string) {
+  async directLoginForAdmin(email: string, frontendService?: string) {
     const emailLower = email.toLowerCase().trim();
     
+    // Get user first to check by userId
     const user = await this.userRepository.findOne({
       where: { email: emailLower },
     });
@@ -384,6 +428,15 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('User not found');
     }
+    
+    // Check for existing active tokens (by email and userId)
+    // If active token exists, BLOCK login - don't allow multiple sessions
+    const hasActiveToken = await this.tokenService.hasActiveToken(emailLower, user.id);
+    if (hasActiveToken) {
+      console.log(`[DIRECT LOGIN] ❌ BLOCKED: Active token found for ${emailLower} - preventing second login`);
+      throw new ConflictException('Another session is already logged in. Please close other sessions or try again later.');
+    }
+    console.log(`[DIRECT LOGIN] ✅ ALLOWED: No active tokens found for ${emailLower}`);
     
     if (!user.isActive) {
       throw new UnauthorizedException('Account is deactivated');
@@ -431,6 +484,17 @@ export class AuthService {
       secret: process.env.JWT_REFRESH_SECRET,
       expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
     });
+
+    // Store token in database for tracking
+    // This will check for active tokens and throw error if found
+    try {
+      await this.tokenService.createToken(user.id, emailLower, accessToken, frontendService);
+    } catch (error: any) {
+      if (error.message.includes('Active token exists')) {
+        throw new ConflictException('Another session is already logged in. Please close other sessions or try again later.');
+      }
+      throw error;
+    }
     
     return {
       accessToken,
@@ -451,6 +515,81 @@ export class AuthService {
         wallets: userWithWallets?.wallets || [],
       },
       stampInfo,
+    };
+  }
+
+  async logout(token: string): Promise<{ ok: boolean }> {
+    if (token) {
+      await this.tokenService.expireToken(token);
+    }
+    return { ok: true };
+  }
+
+  async updateActivity(token: string, frontendService?: string): Promise<{ ok: boolean }> {
+    if (token) {
+      await this.tokenService.updateActivity(token, frontendService);
+      if (frontendService) {
+        console.log(`✅ Activity updated from frontend: ${frontendService}`);
+      }
+    }
+    return { ok: true };
+  }
+
+  async expireTokenDueToInactivity(token: string, frontendService?: string): Promise<{ ok: boolean }> {
+    if (token) {
+      // Verify frontend service matches token's frontend service
+      const userToken = await this.tokenService.getTokenByTokenString(token);
+      if (userToken && userToken.frontendService && frontendService && userToken.frontendService !== frontendService) {
+        console.warn(`⚠️ Frontend service mismatch: token belongs to ${userToken.frontendService}, but expire request from ${frontendService}`);
+        // Still expire, but log warning
+      }
+      
+      await this.tokenService.expireToken(token);
+      console.log(`✅ Token expired due to inactivity from frontend: ${frontendService || 'unknown'}`);
+    }
+    return { ok: true };
+  }
+
+  /**
+   * Check if token is valid and belongs to the given email.
+   * Returns { valid: boolean, user?: ... } so callers can fetch and use the result.
+   */
+  async checkToken(checkTokenDto: CheckTokenDto): Promise<{ valid: boolean; user?: any }> {
+    const { token, email } = checkTokenDto;
+    const normalizedEmail = email.toLowerCase().trim();
+
+    if (!token || !normalizedEmail) {
+      return { valid: false };
+    }
+
+    const userToken = await this.tokenService.validateToken(token);
+    if (!userToken) {
+      return { valid: false };
+    }
+
+    if (userToken.username?.toLowerCase().trim() !== normalizedEmail) {
+      return { valid: false };
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { id: userToken.userId },
+      relations: ['wallets'],
+    });
+    if (!user || !user.isActive) {
+      return { valid: false };
+    }
+
+    return {
+      valid: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        gem: user.gem,
+        isActive: user.isActive,
+        wallets: user.wallets || [],
+      },
     };
   }
 }

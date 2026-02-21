@@ -6,12 +6,14 @@ import {
   Request,
   HttpCode,
   HttpStatus,
+  Get,
 } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
-import { LoginDto, RegisterDto, RefreshTokenDto, ChangePasswordDto, RequestCodeDto, VerifyCodeDto, CheckUserDto, DirectLoginDto } from './dto/auth.dto';
+import { TokenValidationGuard } from './token-validation.guard';
+import { LoginDto, RegisterDto, RefreshTokenDto, ChangePasswordDto, RequestCodeDto, VerifyCodeDto, CheckUserDto, CheckTokenDto, DirectLoginDto } from './dto/auth.dto';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -75,8 +77,10 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Code verified and user logged in' })
   @ApiResponse({ status: 401, description: 'Invalid or expired code' })
   @ApiResponse({ status: 400, description: 'Name required for first-time registration' })
-  async verifyCode(@Body() verifyCodeDto: VerifyCodeDto) {
-    return this.authService.verifyCode(verifyCodeDto);
+  @ApiResponse({ status: 409, description: 'Another session is already logged in' })
+  async verifyCode(@Body() verifyCodeDto: VerifyCodeDto, @Request() req: any) {
+    const frontendService = req.headers['x-frontend-service'] || req.headers['frontend-service'] || null;
+    return this.authService.verifyCode(verifyCodeDto, frontendService);
   }
 
   @Post('check-user')
@@ -87,12 +91,59 @@ export class AuthController {
     return this.authService.checkUser(checkUserDto);
   }
 
+  @Post('check-token')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Check if token is valid and belongs to the given email' })
+  @ApiResponse({ status: 200, description: 'Returns { valid: boolean, user?: ... }' })
+  async checkToken(@Body() checkTokenDto: CheckTokenDto) {
+    return this.authService.checkToken(checkTokenDto);
+  }
+
   @Post('direct-login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Direct login for verified admin/manager users (no password/code required)' })
   @ApiResponse({ status: 200, description: 'Login successful' })
   @ApiResponse({ status: 401, description: 'User not found, deactivated, or not admin/manager' })
-  async directLogin(@Body() directLoginDto: DirectLoginDto) {
-    return this.authService.directLoginForAdmin(directLoginDto.email);
+  async directLogin(@Body() directLoginDto: DirectLoginDto, @Request() req: any) {
+    const frontendService = req.headers['x-frontend-service'] || req.headers['frontend-service'] || null;
+    return this.authService.directLoginForAdmin(directLoginDto.email, frontendService);
+  }
+
+  @Post('logout')
+  @UseGuards(JwtAuthGuard, TokenValidationGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Logout user and expire token' })
+  @ApiResponse({ status: 200, description: 'Logout successful' })
+  async logout(@Request() req: any) {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
+    return this.authService.logout(token);
+  }
+
+  @Get('activity')
+  @UseGuards(JwtAuthGuard, TokenValidationGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Update user activity timestamp (heartbeat)' })
+  @ApiResponse({ status: 200, description: 'Activity updated' })
+  async updateActivity(@Request() req: any) {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
+    const frontendService = req.headers['x-frontend-service'] || req.headers['frontend-service'];
+    return this.authService.updateActivity(token, frontendService);
+  }
+
+  @Post('expire-inactivity')
+  @UseGuards(JwtAuthGuard, TokenValidationGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Expire token due to user inactivity (5 minutes)' })
+  @ApiResponse({ status: 200, description: 'Token expired due to inactivity' })
+  async expireInactivity(@Request() req: any) {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
+    const frontendService = req.headers['x-frontend-service'] || req.headers['frontend-service'];
+    return this.authService.expireTokenDueToInactivity(token, frontendService);
   }
 }

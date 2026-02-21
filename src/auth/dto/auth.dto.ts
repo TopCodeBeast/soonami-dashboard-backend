@@ -33,6 +33,16 @@ export class CheckUserDto {
   email: string;
 }
 
+export class CheckTokenDto {
+  @ApiProperty({ example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...', description: 'JWT access token' })
+  @IsString()
+  token: string;
+
+  @ApiProperty({ example: 'user@example.com', description: 'User email to verify token belongs to this user' })
+  @IsEmail()
+  email: string;
+}
+
 export class DirectLoginDto {
   @ApiProperty({ example: 'admin@example.com' })
   @IsEmail()
