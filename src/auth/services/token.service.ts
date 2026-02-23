@@ -3,9 +3,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, In } from 'typeorm';
 import { UserToken } from '../entities/user-token.entity';
 
-/** Frontend that does not use token expiry (no 1h, no inactivity, no browser-close). */
-const DASHBOARD_FRONTEND = 'soonami-dashboard-frontend';
-
 @Injectable()
 export class TokenService {
   constructor(
@@ -14,13 +11,9 @@ export class TokenService {
   ) {}
 
   /**
-   * Create a new token record
-   * Also checks for existing active tokens before creating to prevent race conditions
-   * soonami-dashboard-frontend: token does not expire (long-lived session).
+   * Create a new token record (only for non-dashboard frontends; dashboard does not store tokens).
    */
   async createToken(userId: string, username: string, token: string, frontendService?: string): Promise<UserToken> {
-    // Check for active tokens BEFORE creating new one
-    // If active token exists, throw error - don't create new token
     const hasActive = await this.hasActiveToken(username, userId);
     if (hasActive) {
       console.log(`[TOKEN CREATE] ❌ BLOCKED: Active token exists for ${username} (userId: ${userId})`);
@@ -28,11 +21,7 @@ export class TokenService {
     }
 
     const now = new Date();
-    // Dashboard: no expiry. Other frontends: 1 hour.
-    const isDashboard = frontendService === DASHBOARD_FRONTEND;
-    const expiresAt = isDashboard
-      ? new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000) // 1 year
-      : new Date(now.getTime() + 60 * 60 * 1000); // 1 hour
+    const expiresAt = new Date(now.getTime() + 60 * 60 * 1000); // 1 hour
 
     const userToken = this.tokenRepository.create({
       userId,
@@ -73,11 +62,9 @@ export class TokenService {
   async hasActiveToken(username: string, userId?: string): Promise<boolean> {
     const now = new Date();
 
-    // Build query to check by username OR userId
-    // Active = isActive and (not expired by time, or dashboard which has no expiry)
     const queryBuilder = this.tokenRepository.createQueryBuilder('token')
       .where('token.isActive = :isActive', { isActive: true })
-      .andWhere('(token.expiresAt > :now OR token.frontendService = :dashboard)', { now, dashboard: DASHBOARD_FRONTEND })
+      .andWhere('token.expiresAt > :now', { now })
       .andWhere('(token.username = :username' + (userId ? ' OR token.userId = :userId' : '') + ')', {
         username,
         ...(userId ? { userId } : {}),
@@ -231,11 +218,6 @@ export class TokenService {
 
     if (!userToken) return null;
 
-    // soonami-dashboard-frontend: no expiry logic (long-lived session)
-    if (userToken.frontendService === DASHBOARD_FRONTEND) {
-      return userToken;
-    }
-
     // Check if token expired (1 hour absolute)
     if (userToken.expiresAt <= now) {
       await this.expireToken(token);
@@ -279,9 +261,9 @@ export class TokenService {
       },
     });
 
-    const expiredByTime = tokensToExpire.filter(t => t.expiresAt <= now && t.frontendService !== DASHBOARD_FRONTEND);
+    const expiredByTime = tokensToExpire.filter(t => t.expiresAt <= now);
     const expiredByBrowserClose = tokensToExpire.filter(
-      t => t.expiresAt > now && t.lastActivityAt <= twoMinutesAgo && t.frontendService !== DASHBOARD_FRONTEND
+      t => t.expiresAt > now && t.lastActivityAt <= twoMinutesAgo
     );
     
     // Group by frontend service for logging
@@ -296,33 +278,21 @@ export class TokenService {
       console.log(`[CLEANUP] Browser close breakdown by frontend:`, expiredByFrontend);
     }
 
-    // Expire tokens that are past absolute expiration (1 hour)
-    // Exclude soonami-dashboard-frontend (no expiry for dashboard)
     let expiredByTimeCount = 0;
     if (expiredByTime.length > 0) {
-      const result = await this.tokenRepository
-        .createQueryBuilder()
-        .update(UserToken)
-        .set({ isActive: false })
-        .where('isActive = :isActive', { isActive: true })
-        .andWhere('expiresAt <= :now', { now })
-        .andWhere('(frontendService IS NULL OR frontendService != :dashboard)', { dashboard: DASHBOARD_FRONTEND })
-        .execute();
+      const result = await this.tokenRepository.update(
+        { isActive: true, expiresAt: LessThan(now) },
+        { isActive: false },
+      );
       expiredByTimeCount = result.affected || 0;
     }
 
-    // Expire tokens that have no heartbeat for 2+ minutes (browser closed)
-    // Exclude soonami-dashboard-frontend (no browser-close expiry for dashboard)
-    // Frontend sends heartbeat every 2 minutes. If no heartbeat received → browser closed
     let expiredByBrowserCloseCount = 0;
     if (expiredByBrowserClose.length > 0) {
-      // Log which tokens will be expired (before expiring)
       expiredByBrowserClose.forEach(t => {
-        if (t.frontendService === DASHBOARD_FRONTEND) return;
         const minutesSinceActivity = Math.floor((now.getTime() - t.lastActivityAt.getTime()) / (60 * 1000));
-        console.log(`[CLEANUP] 🔍 Token for ${t.username} (frontend: ${t.frontendService || 'unknown'}) - No heartbeat for ${minutesSinceActivity} minutes - Will expire (browser closed)`);
+        console.log(`[CLEANUP] 🔍 Token for ${t.username} (frontend: ${t.frontendService || 'unknown'}) - No heartbeat for ${minutesSinceActivity} min - Will expire`);
       });
-
       const result = await this.tokenRepository
         .createQueryBuilder()
         .update(UserToken)
@@ -331,7 +301,6 @@ export class TokenService {
         .andWhere('lastActivityAt <= :twoMinutesAgo', { twoMinutesAgo })
         .andWhere('expiresAt > :now', { now })
         .andWhere('"createdAt" <= :threeMinutesAgo', { threeMinutesAgo })
-        .andWhere('(frontendService IS NULL OR frontendService != :dashboard)', { dashboard: DASHBOARD_FRONTEND })
         .execute();
       expiredByBrowserCloseCount = result.affected || 0;
 
@@ -346,19 +315,5 @@ export class TokenService {
     console.log(`[CLEANUP] Summary: ${expiredByTimeCount} tokens expired by absolute expiration, ${expiredByBrowserCloseCount} tokens expired by browser close`);
 
     return expiredByTimeCount + expiredByBrowserCloseCount;
-  }
-
-  /**
-   * Get token by token string
-   */
-  async getTokenByString(token: string): Promise<UserToken | null> {
-    return await this.tokenRepository.findOne({
-      where: { token },
-    });
-  }
-
-  /** Alias for getTokenByString (used by auth.service). */
-  async getTokenByTokenString(token: string): Promise<UserToken | null> {
-    return this.getTokenByString(token);
   }
 }

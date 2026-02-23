@@ -16,6 +16,9 @@ import { TokenService } from './services/token.service';
 import { StampsService } from '../stamps/stamps.service';
 import { validateName } from './utils/name-validator';
 
+/** soonami-dashboard-frontend: no token in DB, no expiry; login with JWT only */
+const DASHBOARD_FRONTEND = 'soonami-dashboard-frontend';
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -166,19 +169,22 @@ export class AuthService {
     });
     
     const isFirstLogin = !existingUser;
-    
-    // Check for existing active tokens for this user (by email/username)
-    // If active token exists, BLOCK login - don't allow multiple sessions
-    console.log(`[LOGIN CHECK] Checking for active tokens before login - email: ${email}, userId: ${existingUser?.id || 'N/A'}`);
-    const hasActiveToken = existingUser 
-      ? await this.tokenService.hasActiveToken(email, existingUser.id)
-      : await this.tokenService.hasActiveToken(email);
-    
-    if (hasActiveToken) {
-      console.log(`[LOGIN CHECK] ❌ BLOCKED: Active token found for ${email} - preventing second login`);
-      throw new ConflictException('Another session is already logged in. Please close other sessions or try again later.');
+    const isDashboard = frontendService === DASHBOARD_FRONTEND;
+
+    // Dashboard: no token in DB, no session check. Other frontends: block if active token exists.
+    if (!isDashboard) {
+      console.log(`[LOGIN CHECK] Checking for active tokens before login - email: ${email}, userId: ${existingUser?.id || 'N/A'}`);
+      const hasActiveToken = existingUser
+        ? await this.tokenService.hasActiveToken(email, existingUser.id)
+        : await this.tokenService.hasActiveToken(email);
+      if (hasActiveToken) {
+        console.log(`[LOGIN CHECK] ❌ BLOCKED: Active token found for ${email} - preventing second login`);
+        throw new ConflictException('Another session is already logged in. Please close other sessions or try again later.');
+      }
+      console.log(`[LOGIN CHECK] ✅ ALLOWED: No active tokens found for ${email}`);
+    } else {
+      console.log(`[LOGIN CHECK] Dashboard login - no token DB, no session check`);
     }
-    console.log(`[LOGIN CHECK] ✅ ALLOWED: No active tokens found for ${email}`);
     
     if (isFirstLogin) {
       // First-time login - need name to create user
@@ -247,7 +253,8 @@ export class AuthService {
         }
       }
       
-      const payload = { email: savedUser.email, sub: savedUser.id, role: savedUser.role };
+      const payload: any = { email: savedUser.email, sub: savedUser.id, role: savedUser.role };
+      if (isDashboard) payload.fs = DASHBOARD_FRONTEND;
       const accessToken = this.jwtService.sign(payload, {
         secret: process.env.JWT_SECRET,
         expiresIn: process.env.JWT_EXPIRES_IN || '15m',
@@ -258,18 +265,20 @@ export class AuthService {
         expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
       });
 
-      // Store token in database for tracking
-      // This will check for active tokens and throw error if found
-      console.log(`[LOGIN] Creating token for user: ${savedUser.id}, email: ${email}`);
-      try {
-        await this.tokenService.createToken(savedUser.id, email, accessToken, frontendService);
-        console.log(`[LOGIN] ✅ Token created successfully for ${email}`);
-      } catch (error: any) {
-        if (error.message.includes('Active token exists')) {
-          console.log(`[LOGIN] ❌ Token creation blocked - active token exists for ${email}`);
-          throw new ConflictException('Another session is already logged in. Please close other sessions or try again later.');
+      if (!isDashboard) {
+        console.log(`[LOGIN] Creating token for user: ${savedUser.id}, email: ${email}`);
+        try {
+          await this.tokenService.createToken(savedUser.id, email, accessToken, frontendService);
+          console.log(`[LOGIN] ✅ Token created successfully for ${email}`);
+        } catch (error: any) {
+          if (error.message.includes('Active token exists')) {
+            console.log(`[LOGIN] ❌ Token creation blocked - active token exists for ${email}`);
+            throw new ConflictException('Another session is already logged in. Please close other sessions or try again later.');
+          }
+          throw error;
         }
-        throw error;
+      } else {
+        console.log(`[LOGIN] Dashboard login - token not stored in DB`);
       }
       
       return {
@@ -348,7 +357,8 @@ export class AuthService {
         relations: ['wallets'],
       });
       
-      const payload = { email: existingUser.email, sub: existingUser.id, role: existingUser.role };
+      const payload: any = { email: existingUser.email, sub: existingUser.id, role: existingUser.role };
+      if (isDashboard) payload.fs = DASHBOARD_FRONTEND;
       const accessToken = this.jwtService.sign(payload, {
         secret: process.env.JWT_SECRET,
         expiresIn: process.env.JWT_EXPIRES_IN || '15m',
@@ -359,18 +369,20 @@ export class AuthService {
         expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
       });
 
-      // Store token in database for tracking
-      // This will check for active tokens and throw error if found
-      console.log(`[LOGIN] Creating token for existing user: ${existingUser.id}, email: ${email}`);
-      try {
-        await this.tokenService.createToken(existingUser.id, email, accessToken, frontendService);
-        console.log(`[LOGIN] ✅ Token created successfully for ${email}`);
-      } catch (error: any) {
-        if (error.message.includes('Active token exists')) {
-          console.log(`[LOGIN] ❌ Token creation blocked - active token exists for ${email}`);
-          throw new ConflictException('Another session is already logged in. Please close other sessions or try again later.');
+      if (!isDashboard) {
+        console.log(`[LOGIN] Creating token for existing user: ${existingUser.id}, email: ${email}`);
+        try {
+          await this.tokenService.createToken(existingUser.id, email, accessToken, frontendService);
+          console.log(`[LOGIN] ✅ Token created successfully for ${email}`);
+        } catch (error: any) {
+          if (error.message.includes('Active token exists')) {
+            console.log(`[LOGIN] ❌ Token creation blocked - active token exists for ${email}`);
+            throw new ConflictException('Another session is already logged in. Please close other sessions or try again later.');
+          }
+          throw error;
         }
-        throw error;
+      } else {
+        console.log(`[LOGIN] Dashboard login - token not stored in DB`);
       }
       
       return {
@@ -419,8 +431,8 @@ export class AuthService {
 
   async directLoginForAdmin(email: string, frontendService?: string) {
     const emailLower = email.toLowerCase().trim();
+    const isDashboard = frontendService === DASHBOARD_FRONTEND;
     
-    // Get user first to check by userId
     const user = await this.userRepository.findOne({
       where: { email: emailLower },
     });
@@ -429,14 +441,16 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
     
-    // Check for existing active tokens (by email and userId)
-    // If active token exists, BLOCK login - don't allow multiple sessions
-    const hasActiveToken = await this.tokenService.hasActiveToken(emailLower, user.id);
-    if (hasActiveToken) {
-      console.log(`[DIRECT LOGIN] ❌ BLOCKED: Active token found for ${emailLower} - preventing second login`);
-      throw new ConflictException('Another session is already logged in. Please close other sessions or try again later.');
+    if (!isDashboard) {
+      const hasActiveToken = await this.tokenService.hasActiveToken(emailLower, user.id);
+      if (hasActiveToken) {
+        console.log(`[DIRECT LOGIN] ❌ BLOCKED: Active token found for ${emailLower}`);
+        throw new ConflictException('Another session is already logged in. Please close other sessions or try again later.');
+      }
+      console.log(`[DIRECT LOGIN] ✅ ALLOWED: No active tokens found for ${emailLower}`);
+    } else {
+      console.log(`[DIRECT LOGIN] Dashboard - no token DB check`);
     }
-    console.log(`[DIRECT LOGIN] ✅ ALLOWED: No active tokens found for ${emailLower}`);
     
     if (!user.isActive) {
       throw new UnauthorizedException('Account is deactivated');
@@ -474,7 +488,8 @@ export class AuthService {
       // Don't fail login if stamp collection fails
     }
     
-    const payload = { email: user.email, sub: user.id, role: user.role };
+    const payload: any = { email: user.email, sub: user.id, role: user.role };
+    if (isDashboard) payload.fs = DASHBOARD_FRONTEND;
     const accessToken = this.jwtService.sign(payload, {
       secret: process.env.JWT_SECRET,
       expiresIn: process.env.JWT_EXPIRES_IN || '15m',
@@ -485,15 +500,15 @@ export class AuthService {
       expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
     });
 
-    // Store token in database for tracking
-    // This will check for active tokens and throw error if found
-    try {
-      await this.tokenService.createToken(user.id, emailLower, accessToken, frontendService);
-    } catch (error: any) {
-      if (error.message.includes('Active token exists')) {
-        throw new ConflictException('Another session is already logged in. Please close other sessions or try again later.');
+    if (!isDashboard) {
+      try {
+        await this.tokenService.createToken(user.id, emailLower, accessToken, frontendService);
+      } catch (error: any) {
+        if (error.message.includes('Active token exists')) {
+          throw new ConflictException('Another session is already logged in. Please close other sessions or try again later.');
+        }
+        throw error;
       }
-      throw error;
     }
     
     return {
@@ -552,7 +567,7 @@ export class AuthService {
 
   /**
    * Check if token is valid and belongs to the given email.
-   * Returns { valid: boolean, user?: ... } so callers can fetch and use the result.
+   * Returns { valid: boolean, user?: ... }. Supports both DB tokens and dashboard (JWT-only) tokens.
    */
   async checkToken(checkTokenDto: CheckTokenDto): Promise<{ valid: boolean; user?: any }> {
     const { token, email } = checkTokenDto;
@@ -563,33 +578,53 @@ export class AuthService {
     }
 
     const userToken = await this.tokenService.validateToken(token);
-    if (!userToken) {
-      return { valid: false };
+    if (userToken) {
+      if (userToken.username?.toLowerCase().trim() !== normalizedEmail) {
+        return { valid: false };
+      }
+      const user = await this.userRepository.findOne({
+        where: { id: userToken.userId },
+        relations: ['wallets'],
+      });
+      if (!user || !user.isActive) return { valid: false };
+      return {
+        valid: true,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          gem: user.gem,
+          isActive: user.isActive,
+          wallets: user.wallets || [],
+        },
+      };
     }
 
-    if (userToken.username?.toLowerCase().trim() !== normalizedEmail) {
+    // Dashboard token (not in DB): validate by JWT only
+    try {
+      const payload = this.jwtService.verify(token);
+      if (payload.fs !== DASHBOARD_FRONTEND) return { valid: false };
+      if ((payload.email || '').toLowerCase().trim() !== normalizedEmail) return { valid: false };
+      const user = await this.userRepository.findOne({
+        where: { id: payload.sub },
+        relations: ['wallets'],
+      });
+      if (!user || !user.isActive) return { valid: false };
+      return {
+        valid: true,
+        user: {
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          role: user.role,
+          gem: user.gem,
+          isActive: user.isActive,
+          wallets: user.wallets || [],
+        },
+      };
+    } catch {
       return { valid: false };
     }
-
-    const user = await this.userRepository.findOne({
-      where: { id: userToken.userId },
-      relations: ['wallets'],
-    });
-    if (!user || !user.isActive) {
-      return { valid: false };
-    }
-
-    return {
-      valid: true,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        gem: user.gem,
-        isActive: user.isActive,
-        wallets: user.wallets || [],
-      },
-    };
   }
 }

@@ -22,8 +22,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Invalid token');
     }
 
-    // Token validation with TokenService is done in TokenValidationGuard
-    // This just extracts user info from JWT payload
-    return { userId: payload.sub, email: payload.email, role: payload.role };
+    // Pass through fs (frontend service) so TokenValidationGuard can skip DB for dashboard
+    return {
+      userId: payload.sub,
+      email: payload.email,
+      role: payload.role,
+      fs: payload.fs,
+    };
   }
 }
