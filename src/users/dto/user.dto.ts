@@ -97,6 +97,41 @@ export class UpdateUserDto {
   @IsOptional()
   @IsString()
   gemTransactionMetadata?: string;
+
+  @ApiProperty({ required: false, description: 'Stability signal remaining minutes' })
+  @IsOptional()
+  @IsNumber()
+  stabilitySignalRemainingMinutes?: number;
+
+  @ApiProperty({ required: false, description: 'Stability signal full capacity (minutes)' })
+  @IsOptional()
+  @IsNumber()
+  stabilitySignalFullCapacityMinutes?: number;
+
+  @ApiProperty({ required: false, description: 'When signal timer was paused' })
+  @IsOptional()
+  @IsDateString()
+  stabilitySignalPausedAt?: string;
+
+  @ApiProperty({ required: false, description: 'Last activity timestamp for signal decay' })
+  @IsOptional()
+  @IsDateString()
+  stabilitySignalLastActivityAt?: string;
+
+  @ApiProperty({ required: false, description: 'Stability Signal (S) inventory count' })
+  @IsOptional()
+  @IsNumber()
+  stabilitySignalS?: number;
+
+  @ApiProperty({ required: false, description: 'Stability Signal (M) inventory count' })
+  @IsOptional()
+  @IsNumber()
+  stabilitySignalM?: number;
+
+  @ApiProperty({ required: false, description: 'Stability Signal (L) inventory count' })
+  @IsOptional()
+  @IsNumber()
+  stabilitySignalL?: number;
 }
 
 export class UserResponseDto {

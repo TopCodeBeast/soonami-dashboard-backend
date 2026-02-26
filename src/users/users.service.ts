@@ -132,15 +132,21 @@ export class UsersService {
     // 2. Only gem-related fields are being updated (no role change)
     const isAssigningManager = updateUserDto.role === UserRole.MANAGER;
     const isUpdatingManager = targetUser.role === UserRole.MANAGER;
-    const isOnlyUpdatingGems = Object.keys(updateUserDto).every(key => 
-      key === 'gem' || key === 'gemTransactionReason' || key === 'gemTransactionMetadata'
+    const ALLOWED_SELF_UPDATE_KEYS = [
+      'gem', 'gemTransactionReason', 'gemTransactionMetadata',
+      'stabilitySignalRemainingMinutes', 'stabilitySignalFullCapacityMinutes',
+      'stabilitySignalPausedAt', 'stabilitySignalLastActivityAt',
+      'stabilitySignalS', 'stabilitySignalM', 'stabilitySignalL',
+    ];
+    const isOnlyUpdatingGemsOrStability = Object.keys(updateUserDto).every(key =>
+      ALLOWED_SELF_UPDATE_KEYS.includes(key),
     );
     const isSelfUpdate = currentUserId === id;
     
     // Only enforce whitelist check if:
     // - Assigning manager role, OR
     // - Updating a manager AND it's not a self-update AND it's not just gem updates
-    if (isAssigningManager || (isUpdatingManager && !isSelfUpdate && !isOnlyUpdatingGems)) {
+    if (isAssigningManager || (isUpdatingManager && !isSelfUpdate && !isOnlyUpdatingGemsOrStability)) {
       if (!ManagerWhitelist.isWhitelisted(currentUserEmail)) {
         throw new ForbiddenException('Only whitelisted users can manage managers');
       }
@@ -236,6 +242,13 @@ export class UsersService {
         'stampsCollected',
         'lastStampClaimDate',
         'firstStampClaimDate',
+        'stabilitySignalRemainingMinutes',
+        'stabilitySignalFullCapacityMinutes',
+        'stabilitySignalPausedAt',
+        'stabilitySignalLastActivityAt',
+        'stabilitySignalS',
+        'stabilitySignalM',
+        'stabilitySignalL',
         'createdAt',
         'updatedAt',
       ],
@@ -247,7 +260,7 @@ export class UsersService {
 
     console.log(`✅ Profile fetched for user ${currentUserId} with ${user.stampsCollected || 0} stamps`);
     
-    // Load wallets relation
+    // Load wallets relation and stability signal fields
     const userWithWallets = await this.userRepository.findOne({
       where: { id: currentUserId },
       relations: ['wallets'],
@@ -262,6 +275,13 @@ export class UsersService {
         'stampsCollected',
         'lastStampClaimDate',
         'firstStampClaimDate',
+        'stabilitySignalRemainingMinutes',
+        'stabilitySignalFullCapacityMinutes',
+        'stabilitySignalPausedAt',
+        'stabilitySignalLastActivityAt',
+        'stabilitySignalS',
+        'stabilitySignalM',
+        'stabilitySignalL',
         'createdAt',
         'updatedAt',
       ],
@@ -271,7 +291,7 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    // Return user with wallets (or empty array if none)
+    // Return user with wallets and stability signal fields
     return {
       id: userWithWallets.id,
       name: userWithWallets.name,
@@ -283,6 +303,13 @@ export class UsersService {
       stampsCollected: userWithWallets.stampsCollected,
       lastStampClaimDate: userWithWallets.lastStampClaimDate,
       firstStampClaimDate: userWithWallets.firstStampClaimDate,
+      stabilitySignalRemainingMinutes: userWithWallets.stabilitySignalRemainingMinutes ?? 0,
+      stabilitySignalFullCapacityMinutes: userWithWallets.stabilitySignalFullCapacityMinutes ?? 60,
+      stabilitySignalPausedAt: userWithWallets.stabilitySignalPausedAt,
+      stabilitySignalLastActivityAt: userWithWallets.stabilitySignalLastActivityAt,
+      stabilitySignalS: userWithWallets.stabilitySignalS ?? 0,
+      stabilitySignalM: userWithWallets.stabilitySignalM ?? 0,
+      stabilitySignalL: userWithWallets.stabilitySignalL ?? 0,
       createdAt: userWithWallets.createdAt,
       updatedAt: userWithWallets.updatedAt,
       wallets: userWithWallets.wallets || [],

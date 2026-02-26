@@ -51,6 +51,28 @@ export class User {
   @Column({ nullable: true })
   firstStampClaimDate: Date;
 
+  // Stabilizer Signal (Pixelstream time) - 1:1 ratio signal%:minutes
+  @Column({ type: 'float', default: 0 })
+  stabilitySignalRemainingMinutes: number;
+
+  @Column({ type: 'float', default: 60 })
+  stabilitySignalFullCapacityMinutes: number;
+
+  @Column({ nullable: true })
+  stabilitySignalPausedAt: Date;
+
+  @Column({ nullable: true })
+  stabilitySignalLastActivityAt: Date;
+
+  @Column({ default: 0 })
+  stabilitySignalS: number;
+
+  @Column({ default: 0 })
+  stabilitySignalM: number;
+
+  @Column({ default: 0 })
+  stabilitySignalL: number;
+
   @OneToMany(() => UserItem, (userItem) => userItem.user, { cascade: true })
   userItems: UserItem[];
 
