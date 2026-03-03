@@ -7,19 +7,27 @@ import {
   HttpCode,
   HttpStatus,
   Get,
+  Patch,
+  Param,
+  Delete,
+  ForbiddenException,
 } from '@nestjs/common';
 import { ThrottlerGuard } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { TokenValidationGuard } from './token-validation.guard';
+import { TokenService } from './services/token.service';
 import { LoginDto, RegisterDto, RefreshTokenDto, ChangePasswordDto, RequestCodeDto, VerifyCodeDto, CheckUserDto, CheckTokenDto, DirectLoginDto } from './dto/auth.dto';
 
 @ApiTags('Authentication')
 @Controller('auth')
 @UseGuards(ThrottlerGuard)
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private tokenService: TokenService,
+  ) {}
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
@@ -145,5 +153,71 @@ export class AuthController {
     const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
     const frontendService = req.headers['x-frontend-service'] || req.headers['frontend-service'];
     return this.authService.expireTokenDueToInactivity(token, frontendService);
+  }
+
+  /** Manager only: list all user tokens (for admin UI) */
+  @Get('tokens')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List all user tokens (Manager only)' })
+  @ApiResponse({ status: 200, description: 'List of tokens' })
+  @ApiResponse({ status: 403, description: 'Forbidden - Manager only' })
+  async listTokens(@Request() req: any) {
+    if (req.user?.role !== 'manager') {
+      throw new ForbiddenException('Only managers can list tokens');
+    }
+    const tokens = await this.tokenService.findAll();
+    return tokens.map((t) => ({
+      id: t.id,
+      userId: t.userId,
+      username: t.username,
+      tokenPreview: t.token ? `${t.token.slice(0, 12)}...${t.token.slice(-4)}` : '',
+      createdAt: t.createdAt,
+      lastActivityAt: t.lastActivityAt,
+      expiresAt: t.expiresAt,
+      isActive: t.isActive,
+      frontendService: t.frontendService ?? null,
+    }));
+  }
+
+  /** Manager only: update token isActive */
+  @Patch('tokens/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Update token active state (Manager only)' })
+  @ApiResponse({ status: 200, description: 'Token updated' })
+  @ApiResponse({ status: 403, description: 'Forbidden - Manager only' })
+  async updateTokenActive(
+    @Param('id') id: string,
+    @Body() body: { isActive: boolean },
+    @Request() req: any,
+  ) {
+    if (req.user?.role !== 'manager') {
+      throw new ForbiddenException('Only managers can update tokens');
+    }
+    const updated = await this.tokenService.updateIsActive(id, !!body.isActive);
+    return {
+      id: updated.id,
+      isActive: updated.isActive,
+      username: updated.username,
+    };
+  }
+
+  /** Manager only: delete token record */
+  @Delete('tokens/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Delete token record (Manager only)' })
+  @ApiResponse({ status: 200, description: 'Token deleted' })
+  @ApiResponse({ status: 403, description: 'Forbidden - Manager only' })
+  @ApiResponse({ status: 404, description: 'Token not found' })
+  async deleteToken(@Param('id') id: string, @Request() req: any) {
+    if (req.user?.role !== 'manager') {
+      throw new ForbiddenException('Only managers can delete tokens');
+    }
+    await this.tokenService.deleteById(id);
+    return { deleted: true, id };
   }
 }

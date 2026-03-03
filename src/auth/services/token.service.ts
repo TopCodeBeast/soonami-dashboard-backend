@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, In } from 'typeorm';
 import { UserToken } from '../entities/user-token.entity';
@@ -176,6 +176,40 @@ export class TokenService {
     return this.tokenRepository.findOne({
       where: { token },
     });
+  }
+
+  /**
+   * Find all tokens (for manager-only admin UI). Returns safe view (token truncated).
+   */
+  async findAll(): Promise<UserToken[]> {
+    return this.tokenRepository.find({
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  /**
+   * Update isActive for a token by id (manager only).
+   */
+  async updateIsActive(id: string, isActive: boolean): Promise<UserToken> {
+    const token = await this.tokenRepository.findOne({ where: { id } });
+    if (!token) {
+      throw new NotFoundException('Token not found');
+    }
+    await this.tokenRepository.update({ id }, { isActive });
+    const updated = await this.tokenRepository.findOne({ where: { id } });
+    if (!updated) throw new NotFoundException('Token not found');
+    return updated;
+  }
+
+  /**
+   * Delete a token record by id (manager only).
+   */
+  async deleteById(id: string): Promise<void> {
+    const token = await this.tokenRepository.findOne({ where: { id } });
+    if (!token) {
+      throw new NotFoundException('Token not found');
+    }
+    await this.tokenRepository.delete({ id });
   }
 
   /**
