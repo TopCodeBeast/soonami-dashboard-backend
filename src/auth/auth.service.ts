@@ -45,7 +45,9 @@ export class AuthService {
     }
 
     if (!user.isActive) {
-      throw new UnauthorizedException('Account is deactivated');
+      throw new UnauthorizedException(
+        'Your account must be activated by an administrator before you can log in.',
+      );
     }
 
     // Update last login
@@ -198,115 +200,27 @@ export class AuthService {
         throw new BadRequestException(nameValidation.error || 'Invalid name');
       }
       
-      // Create user (no password needed - using email verification code login)
+      // Create user as inactive; admin must activate on soonami-frontend before they can log in
       const user = this.userRepository.create({
         email,
         name,
         gem: 0,
         role: UserRole.USER,
-        isActive: true,
-      });
-      
-      const savedUser = await this.userRepository.save(user);
-      
-      // Reload user with wallets relation
-      const userWithWallets = await this.userRepository.findOne({
-        where: { id: savedUser.id },
-        relations: ['wallets'],
-      });
-      
-      // Update last login
-      await this.userRepository.update(savedUser.id, { lastLoginAt: new Date() });
-      
-      // Collect daily stamp
-      let stampInfo = null;
-      try {
-        const stampResult = await this.stampsService.claimStamp(savedUser.id);
-        // Always include stamp info, even if not successful, so frontend can show current status
-        stampInfo = {
-          collected: stampResult.success,
-          success: stampResult.success,
-          stampsCollected: stampResult.stampsCollected,
-          stampsNeeded: stampResult.stampsNeeded,
-          reward: stampResult.reward, // Will be undefined if no reward
-          message: stampResult.message,
-        };
-        
-        // Log reward if given
-        if (stampResult.reward) {
-          console.log('🎉 [AUTH] New user received reward on first login:', stampResult.reward);
-        }
-      } catch (error) {
-        console.error('Error collecting stamp:', error);
-        // Don't fail login if stamp collection fails, but still try to get current status
-        try {
-          const status = await this.stampsService.getStampStatus(savedUser.id);
-          stampInfo = {
-            collected: false,
-            success: false,
-            stampsCollected: status.stampsCollected,
-            stampsNeeded: status.stampsNeeded,
-            message: status.message,
-          };
-        } catch (statusError) {
-          console.error('Error getting stamp status:', statusError);
-        }
-      }
-      
-      const payload: any = { email: savedUser.email, sub: savedUser.id, role: savedUser.role };
-      if (isDashboard) payload.fs = DASHBOARD_FRONTEND;
-      const accessToken = this.jwtService.sign(payload, {
-        secret: process.env.JWT_SECRET,
-        expiresIn: process.env.JWT_EXPIRES_IN || '15m',
-      });
-      
-      const refreshToken = this.jwtService.sign(payload, {
-        secret: process.env.JWT_REFRESH_SECRET,
-        expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
+        isActive: false,
       });
 
-      if (!isDashboard) {
-        console.log(`[LOGIN] Creating token for user: ${savedUser.id}, email: ${email}`);
-        try {
-          await this.tokenService.createToken(savedUser.id, email, accessToken, frontendService);
-          console.log(`[LOGIN] ✅ Token created successfully for ${email}`);
-        } catch (error: any) {
-          if (error.message.includes('Active token exists')) {
-            console.log(`[LOGIN] ❌ Token creation blocked - active token exists for ${email}`);
-            throw new ConflictException('Another session is already logged in. Please close other sessions or try again later.');
-          }
-          throw error;
-        }
-      } else {
-        console.log(`[LOGIN] Dashboard login - token not stored in DB`);
-      }
-      
-      return {
-        accessToken,
-        refreshToken,
-        user: {
-          id: savedUser.id,
-          name: savedUser.name,
-          email: savedUser.email,
-          role: savedUser.role,
-          gem: savedUser.gem,
-          isActive: savedUser.isActive,
-          lastLoginAt: savedUser.lastLoginAt,
-          stampsCollected: savedUser.stampsCollected,
-          lastStampClaimDate: savedUser.lastStampClaimDate,
-          firstStampClaimDate: savedUser.firstStampClaimDate,
-          createdAt: savedUser.createdAt,
-          updatedAt: savedUser.updatedAt,
-          wallets: userWithWallets?.wallets || [],
-        },
-        isFirstLogin: true,
-        stampInfo,
-      };
-    } else {
-      // Existing user - check if active
-      if (!existingUser.isActive) {
-        throw new UnauthorizedException('Account is deactivated');
-      }
+      const savedUser = await this.userRepository.save(user);
+      throw new UnauthorizedException(
+        'Your account has been created. An administrator must activate your account before you can log in.',
+      );
+    }
+
+    // Existing user - check if active
+    if (!existingUser.isActive) {
+      throw new UnauthorizedException(
+        'Your account must be activated by an administrator before you can log in.',
+      );
+    }
       
       // Note: Role checking should be done by the calling application (dashboard frontend)
       // This endpoint is used by both the dashboard and the Python project,
@@ -406,7 +320,6 @@ export class AuthService {
         isFirstLogin: false,
         stampInfo,
       };
-    }
   }
 
   async checkUser(checkUserDto: CheckUserDto) {
@@ -453,7 +366,9 @@ export class AuthService {
     }
     
     if (!user.isActive) {
-      throw new UnauthorizedException('Account is deactivated');
+      throw new UnauthorizedException(
+        'Your account must be activated by an administrator before you can log in.',
+      );
     }
     
     // Only allow direct login for admin and manager roles
