@@ -47,6 +47,15 @@ export class CodeStorageService {
     return code;
   }
 
+  /** Remove the stored code for this email (e.g. after successful login). */
+  consumeCode(email: string): void {
+    const emailLower = email.toLowerCase().trim();
+    if (this.codes.has(emailLower)) {
+      this.codes.delete(emailLower);
+      this.logger.log(`Code consumed for ${email}`);
+    }
+  }
+
   /** Validate code without consuming it (e.g. for revoke-all-sessions so the same code can then be used to verify and log in). */
   validateCodeWithoutConsuming(email: string, code: string): boolean {
     const emailLower = email.toLowerCase().trim();

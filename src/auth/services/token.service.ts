@@ -213,7 +213,7 @@ export class TokenService {
   }
 
   /**
-   * Expire all tokens for a username
+   * Expire all tokens for a username (same criterion as hasActiveToken / getActiveTokens).
    */
   async expireAllUserTokensByUsername(username: string): Promise<void> {
     await this.tokenRepository.update(
@@ -223,13 +223,33 @@ export class TokenService {
   }
 
   /**
-   * Expire all tokens for a userId
+   * Expire all tokens for a userId (same criterion as hasActiveToken).
    */
   async expireAllUserTokens(userId: string): Promise<void> {
     await this.tokenRepository.update(
       { userId, isActive: true },
       { isActive: false },
     );
+  }
+
+  /**
+   * Expire all active tokens for a user using the same criteria as hasActiveToken:
+   * (username = :username OR userId = :userId) AND isActive = true.
+   * Use this for revoke-all-sessions so the same "token names" (columns) are used for check and set.
+   */
+  async expireAllUserTokensByUsernameAndUserId(username: string, userId: string): Promise<number> {
+    const qb = this.tokenRepository
+      .createQueryBuilder()
+      .update(UserToken)
+      .set({ isActive: false })
+      .where('isActive = :isActive', { isActive: true })
+      .andWhere('(username = :username OR userId = :userId)', { username, userId });
+    const result = await qb.execute();
+    const affected = result.affected ?? 0;
+    if (affected > 0) {
+      console.log(`[TOKEN] Expired ${affected} token(s) for username=${username}, userId=${userId}`);
+    }
+    return affected;
   }
 
   /**

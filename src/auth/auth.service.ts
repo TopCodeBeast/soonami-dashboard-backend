@@ -160,8 +160,8 @@ export class AuthService {
     const code = verifyCodeDto.code.trim();
     const name = verifyCodeDto.name?.trim();
     
-    // Verify code
-    if (!this.codeStorageService.verifyCode(email, code)) {
+    // Validate code without consuming so that on 409 (another session) the same code can be used for revoke-all-sessions
+    if (!this.codeStorageService.validateCodeWithoutConsuming(email, code)) {
       throw new UnauthorizedException('Invalid or expired verification code');
     }
     
@@ -180,7 +180,7 @@ export class AuthService {
         ? await this.tokenService.hasActiveToken(email, existingUser.id)
         : await this.tokenService.hasActiveToken(email);
       if (hasActiveToken) {
-        console.log(`[LOGIN CHECK] ❌ BLOCKED: Active token found for ${email} - preventing second login`);
+        console.log(`[LOGIN CHECK] ❌ BLOCKED: Active token found for ${email} - preventing second login (code not consumed, user can use "Log out all sessions")`);
         throw new ConflictException('Another session is already logged in. Please close other sessions or try again later.');
       }
       console.log(`[LOGIN CHECK] ✅ ALLOWED: No active tokens found for ${email}`);
@@ -298,6 +298,9 @@ export class AuthService {
       } else {
         console.log(`[LOGIN] Dashboard login - token not stored in DB`);
       }
+      
+      // Consume code only after successful login so that 409 leaves code valid for revoke-all-sessions
+      this.codeStorageService.consumeCode(email);
       
       return {
         accessToken,
@@ -467,8 +470,13 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired verification code');
     }
 
-    await this.tokenService.expireAllUserTokensByUsername(email);
-    console.log(`[AUTH] Revoked all sessions for: ${email}`);
+    // Expire using same criteria as hasActiveToken: (username OR userId) AND isActive = true
+    const user = await this.userRepository.findOne({ where: { email } });
+    if (user) {
+      await this.tokenService.expireAllUserTokensByUsernameAndUserId(email, user.id);
+    } else {
+      await this.tokenService.expireAllUserTokensByUsername(email);
+    }
     return { ok: true, message: 'All other sessions have been logged out. You can now log in on this device.' };
   }
 
