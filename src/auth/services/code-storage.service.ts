@@ -47,6 +47,18 @@ export class CodeStorageService {
     return code;
   }
 
+  /** Validate code without consuming it (e.g. for revoke-all-sessions so the same code can then be used to verify and log in). */
+  validateCodeWithoutConsuming(email: string, code: string): boolean {
+    const emailLower = email.toLowerCase().trim();
+    const codeTrimmed = code.trim();
+    const codeData = this.codes.get(emailLower);
+    if (!codeData) return false;
+    const now = new Date();
+    if (now > codeData.expiresAt) return false;
+    if (codeData.attempts >= codeData.maxAttempts) return false;
+    return codeData.code === codeTrimmed;
+  }
+
   verifyCode(email: string, code: string): boolean {
     const emailLower = email.toLowerCase().trim();
     const codeTrimmed = code.trim();

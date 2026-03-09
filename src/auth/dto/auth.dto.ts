@@ -27,6 +27,17 @@ export class VerifyCodeDto {
   name?: string;
 }
 
+export class RevokeAllSessionsDto {
+  @ApiProperty({ example: 'user@example.com', description: 'User email' })
+  @IsEmail()
+  email: string;
+
+  @ApiProperty({ example: '123456', description: 'Current verification code (proves ownership)' })
+  @IsString()
+  @Length(6, 6)
+  code: string;
+}
+
 export class CheckUserDto {
   @ApiProperty({ example: 'user@example.com' })
   @IsEmail()

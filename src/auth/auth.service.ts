@@ -9,7 +9,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User, UserRole } from '../users/entities/user.entity';
-import { LoginDto, RegisterDto, ChangePasswordDto, RequestCodeDto, VerifyCodeDto, CheckUserDto, CheckTokenDto } from './dto/auth.dto';
+import { LoginDto, RegisterDto, ChangePasswordDto, RequestCodeDto, VerifyCodeDto, RevokeAllSessionsDto, CheckUserDto, CheckTokenDto } from './dto/auth.dto';
 import { EmailService } from './services/email.service';
 import { CodeStorageService } from './services/code-storage.service';
 import { TokenService } from './services/token.service';
@@ -453,6 +453,23 @@ export class AuthService {
       await this.tokenService.expireToken(token);
     }
     return { ok: true };
+  }
+
+  /**
+   * Revoke all sessions for the user (by email + verification code).
+   * Allows the user to log in on this device without hunting down other logged-in sessions.
+   */
+  async revokeAllSessions(revokeDto: RevokeAllSessionsDto): Promise<{ ok: boolean; message: string }> {
+    const email = revokeDto.email.toLowerCase().trim();
+    const code = revokeDto.code.trim();
+
+    if (!this.codeStorageService.validateCodeWithoutConsuming(email, code)) {
+      throw new UnauthorizedException('Invalid or expired verification code');
+    }
+
+    await this.tokenService.expireAllUserTokensByUsername(email);
+    console.log(`[AUTH] Revoked all sessions for: ${email}`);
+    return { ok: true, message: 'All other sessions have been logged out. You can now log in on this device.' };
   }
 
   async updateActivity(token: string, frontendService?: string): Promise<{ ok: boolean }> {

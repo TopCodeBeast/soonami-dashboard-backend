@@ -18,7 +18,7 @@ import { AuthService } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { TokenValidationGuard } from './token-validation.guard';
 import { TokenService } from './services/token.service';
-import { LoginDto, RegisterDto, RefreshTokenDto, ChangePasswordDto, RequestCodeDto, VerifyCodeDto, CheckUserDto, CheckTokenDto, DirectLoginDto } from './dto/auth.dto';
+import { LoginDto, RegisterDto, RefreshTokenDto, ChangePasswordDto, RequestCodeDto, VerifyCodeDto, RevokeAllSessionsDto, CheckUserDto, CheckTokenDto, DirectLoginDto } from './dto/auth.dto';
 
 @ApiTags('Authentication')
 @Controller('auth')
@@ -89,6 +89,15 @@ export class AuthController {
   async verifyCode(@Body() verifyCodeDto: VerifyCodeDto, @Request() req: any) {
     const frontendService = req.headers['x-frontend-service'] || req.headers['frontend-service'] || null;
     return this.authService.verifyCode(verifyCodeDto, frontendService);
+  }
+
+  @Post('revoke-all-sessions')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Log out of all other sessions' })
+  @ApiResponse({ status: 200, description: 'All other sessions logged out' })
+  @ApiResponse({ status: 401, description: 'Invalid or expired verification code' })
+  async revokeAllSessions(@Body() revokeDto: RevokeAllSessionsDto) {
+    return this.authService.revokeAllSessions(revokeDto);
   }
 
   @Post('check-user')
