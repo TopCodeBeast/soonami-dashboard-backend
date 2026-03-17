@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User, UserRole } from '../users/entities/user.entity';
 import { LoginDto, RegisterDto, ChangePasswordDto, RequestCodeDto, VerifyCodeDto, RevokeAllSessionsDto, CheckUserDto, CheckTokenDto } from './dto/auth.dto';
@@ -15,6 +15,7 @@ import { CodeStorageService } from './services/code-storage.service';
 import { TokenService } from './services/token.service';
 import { StampsService } from '../stamps/stamps.service';
 import { validateName } from './utils/name-validator';
+import { getNextAvailableStreamAssignment } from '../users/utils/stream-assignment';
 
 /** soonami-dashboard-frontend: no token in DB, no expiry; login with JWT only */
 const DASHBOARD_FRONTEND = 'soonami-dashboard-frontend';
@@ -30,6 +31,48 @@ export class AuthService {
     private tokenService: TokenService,
     private stampsService: StampsService,
   ) {}
+
+  private async assignStreamForUser(userId: string): Promise<User> {
+    const maxAttempts = 5;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const current = await this.userRepository.findOne({ where: { id: userId } });
+      if (!current) {
+        throw new UnauthorizedException('User not found');
+      }
+
+      if (current.socketPort && current.pixelStreamUrl) {
+        return current;
+      }
+
+      const users = await this.userRepository.find({
+        select: ['id', 'socketPort', 'pixelStreamUrl'],
+      });
+      const assignment = getNextAvailableStreamAssignment(users);
+
+      try {
+        await this.userRepository.update(userId, assignment);
+        const updated = await this.userRepository.findOne({ where: { id: userId } });
+        if (!updated) {
+          throw new UnauthorizedException('User not found after stream assignment');
+        }
+        return updated;
+      } catch (error) {
+        if (
+          error instanceof QueryFailedError &&
+          (error as any).driverError?.code === '23505' &&
+          attempt < maxAttempts
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw new ConflictException(
+      'Failed to assign unique socket port and pixel stream URL to user',
+    );
+  }
 
   async validateUser(email: string, password: string): Promise<any> {
     // Legacy method - password-based login is no longer supported
@@ -50,10 +93,12 @@ export class AuthService {
       );
     }
 
-    // Update last login
-    await this.userRepository.update(user.id, { lastLoginAt: new Date() });
+    const assignedUser = await this.assignStreamForUser(user.id);
 
-    const payload = { email: user.email, sub: user.id, role: user.role };
+    // Update last login
+    await this.userRepository.update(assignedUser.id, { lastLoginAt: new Date() });
+
+    const payload = { email: assignedUser.email, sub: assignedUser.id, role: assignedUser.role };
     const accessToken = this.jwtService.sign(payload, {
       secret: process.env.JWT_SECRET,
       expiresIn: process.env.JWT_EXPIRES_IN || '15m',
@@ -66,7 +111,7 @@ export class AuthService {
 
     // Reload user with wallets relation
     const userWithWallets = await this.userRepository.findOne({
-      where: { id: user.id },
+      where: { id: assignedUser.id },
       relations: ['wallets'],
     });
     
@@ -74,11 +119,13 @@ export class AuthService {
       accessToken,
       refreshToken,
       user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        gem: user.gem,
+        id: assignedUser.id,
+        name: assignedUser.name,
+        email: assignedUser.email,
+        role: assignedUser.role,
+        gem: assignedUser.gem,
+        socketPort: userWithWallets?.socketPort ?? assignedUser.socketPort,
+        pixelStreamUrl: userWithWallets?.pixelStreamUrl ?? assignedUser.pixelStreamUrl,
         wallets: userWithWallets?.wallets || [],
       },
     };
@@ -103,7 +150,7 @@ export class AuthService {
     });
 
     const savedUser = await this.userRepository.save(user);
-    return savedUser;
+    return this.assignStreamForUser(savedUser.id);
   }
 
   async refreshToken(refreshToken: string) {
@@ -210,6 +257,7 @@ export class AuthService {
       });
 
       const savedUser = await this.userRepository.save(user);
+      await this.assignStreamForUser(savedUser.id);
       throw new UnauthorizedException(
         'Your account has been created. An administrator must activate your account before you can log in.',
       );
@@ -221,6 +269,8 @@ export class AuthService {
         'Your account must be activated by an administrator before you can log in.',
       );
     }
+
+      const assignedUser = await this.assignStreamForUser(existingUser.id);
       
       // Note: Role checking should be done by the calling application (dashboard frontend)
       // This endpoint is used by both the dashboard and the Python project,
@@ -271,7 +321,7 @@ export class AuthService {
         relations: ['wallets'],
       });
       
-      const payload: any = { email: existingUser.email, sub: existingUser.id, role: existingUser.role };
+      const payload: any = { email: assignedUser.email, sub: assignedUser.id, role: assignedUser.role };
       if (isDashboard) payload.fs = DASHBOARD_FRONTEND;
       const accessToken = this.jwtService.sign(payload, {
         secret: process.env.JWT_SECRET,
@@ -306,18 +356,20 @@ export class AuthService {
         accessToken,
         refreshToken,
         user: {
-          id: existingUser.id,
-          name: existingUser.name,
-          email: existingUser.email,
-          role: existingUser.role,
-          gem: existingUser.gem,
-          isActive: existingUser.isActive,
-          lastLoginAt: existingUser.lastLoginAt,
-          stampsCollected: existingUser.stampsCollected,
-          lastStampClaimDate: existingUser.lastStampClaimDate,
-          firstStampClaimDate: existingUser.firstStampClaimDate,
-          createdAt: existingUser.createdAt,
-          updatedAt: existingUser.updatedAt,
+          id: assignedUser.id,
+          name: assignedUser.name,
+          email: assignedUser.email,
+          role: assignedUser.role,
+          gem: assignedUser.gem,
+          isActive: assignedUser.isActive,
+          lastLoginAt: assignedUser.lastLoginAt,
+          stampsCollected: assignedUser.stampsCollected,
+          lastStampClaimDate: assignedUser.lastStampClaimDate,
+          firstStampClaimDate: assignedUser.firstStampClaimDate,
+          createdAt: assignedUser.createdAt,
+          updatedAt: assignedUser.updatedAt,
+          socketPort: userWithWallets?.socketPort ?? assignedUser.socketPort,
+          pixelStreamUrl: userWithWallets?.pixelStreamUrl ?? assignedUser.pixelStreamUrl,
           wallets: userWithWallets?.wallets || [],
         },
         isFirstLogin: false,
@@ -378,6 +430,8 @@ export class AuthService {
     if (user.role !== 'admin' && user.role !== 'manager') {
       throw new UnauthorizedException('Direct login only available for administrators and managers');
     }
+
+    const assignedUser = await this.assignStreamForUser(user.id);
     
     // Update last login
     await this.userRepository.update(user.id, { lastLoginAt: new Date() });
@@ -406,7 +460,7 @@ export class AuthService {
       // Don't fail login if stamp collection fails
     }
     
-    const payload: any = { email: user.email, sub: user.id, role: user.role };
+    const payload: any = { email: assignedUser.email, sub: assignedUser.id, role: assignedUser.role };
     if (isDashboard) payload.fs = DASHBOARD_FRONTEND;
     const accessToken = this.jwtService.sign(payload, {
       secret: process.env.JWT_SECRET,
@@ -433,18 +487,20 @@ export class AuthService {
       accessToken,
       refreshToken,
       user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        gem: user.gem,
-        isActive: user.isActive,
-        lastLoginAt: user.lastLoginAt,
-        stampsCollected: user.stampsCollected,
-        lastStampClaimDate: user.lastStampClaimDate,
-        firstStampClaimDate: user.firstStampClaimDate,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt,
+        id: assignedUser.id,
+        name: assignedUser.name,
+        email: assignedUser.email,
+        role: assignedUser.role,
+        gem: assignedUser.gem,
+        isActive: assignedUser.isActive,
+        lastLoginAt: assignedUser.lastLoginAt,
+        stampsCollected: assignedUser.stampsCollected,
+        lastStampClaimDate: assignedUser.lastStampClaimDate,
+        firstStampClaimDate: assignedUser.firstStampClaimDate,
+        createdAt: assignedUser.createdAt,
+        updatedAt: assignedUser.updatedAt,
+        socketPort: userWithWallets?.socketPort ?? assignedUser.socketPort,
+        pixelStreamUrl: userWithWallets?.pixelStreamUrl ?? assignedUser.pixelStreamUrl,
         wallets: userWithWallets?.wallets || [],
       },
       stampInfo,
@@ -536,6 +592,8 @@ export class AuthService {
           role: user.role,
           gem: user.gem,
           isActive: user.isActive,
+          socketPort: user.socketPort,
+          pixelStreamUrl: user.pixelStreamUrl,
           wallets: user.wallets || [],
         },
       };
@@ -560,6 +618,8 @@ export class AuthService {
           role: user.role,
           gem: user.gem,
           isActive: user.isActive,
+          socketPort: user.socketPort,
+          pixelStreamUrl: user.pixelStreamUrl,
           wallets: user.wallets || [],
         },
       };

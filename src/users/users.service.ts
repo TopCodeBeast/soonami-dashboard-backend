@@ -5,7 +5,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan, MoreThanOrEqual, LessThan } from 'typeorm';
+import { Repository, MoreThan, MoreThanOrEqual, LessThan, QueryFailedError } from 'typeorm';
 import { User, UserRole } from './entities/user.entity';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 import { RoleHierarchy } from './utils/role-hierarchy';
@@ -15,6 +15,7 @@ import { GemTransactionType } from './entities/gem-transaction.entity';
 // Wallet import - table may not exist, queries are wrapped in try-catch
 import { Wallet } from '../wallets/entities/wallet.entity';
 import { GemTransaction } from './entities/gem-transaction.entity';
+import { getNextAvailableStreamAssignment } from './utils/stream-assignment';
 
 @Injectable()
 export class UsersService {
@@ -27,6 +28,48 @@ export class UsersService {
     private readonly gemTransactionRepository: Repository<GemTransaction>,
     private readonly gemTransactionsService: GemTransactionsService,
   ) {}
+
+  private async assignStreamForUser(userId: string): Promise<User> {
+    const maxAttempts = 5;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const current = await this.userRepository.findOne({ where: { id: userId } });
+      if (!current) {
+        throw new NotFoundException('User not found');
+      }
+
+      if (current.socketPort && current.pixelStreamUrl) {
+        return current;
+      }
+
+      const users = await this.userRepository.find({
+        select: ['id', 'socketPort', 'pixelStreamUrl'],
+      });
+      const assignment = getNextAvailableStreamAssignment(users);
+
+      try {
+        await this.userRepository.update(userId, assignment);
+        const updated = await this.userRepository.findOne({ where: { id: userId } });
+        if (!updated) {
+          throw new NotFoundException('User not found after stream assignment');
+        }
+        return updated;
+      } catch (error) {
+        if (
+          error instanceof QueryFailedError &&
+          (error as any).driverError?.code === '23505' &&
+          attempt < maxAttempts
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw new ConflictException(
+      'Failed to assign unique socket port and pixel stream URL to user',
+    );
+  }
 
   async create(createUserDto: CreateUserDto, currentUserRole: UserRole, currentUserEmail: string) {
     // Only managers and admins can create users
@@ -57,7 +100,7 @@ export class UsersService {
     });
 
     const savedUser = await this.userRepository.save(user);
-    return savedUser;
+    return this.assignStreamForUser(savedUser.id);
   }
 
   async findAll(currentUserRole: UserRole) {
@@ -68,7 +111,7 @@ export class UsersService {
 
     const users = await this.userRepository.find({
       relations: ['wallets'],
-      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt', 'gem'],
+      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt', 'gem', 'socketPort', 'pixelStreamUrl'],
     });
     
     // Return users with wallets (or empty array if none)
@@ -87,7 +130,7 @@ export class UsersService {
     const user = await this.userRepository.findOne({
       where: { id },
       relations: ['wallets'],
-      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt', 'gem'],
+      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt', 'gem', 'socketPort', 'pixelStreamUrl'],
     });
 
     if (!user) {
@@ -104,7 +147,7 @@ export class UsersService {
   async findByEmail(email: string) {
     return this.userRepository.findOne({
       where: { email },
-      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt', 'gem'],
+      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt', 'gem', 'socketPort', 'pixelStreamUrl'],
     });
   }
 
@@ -249,6 +292,8 @@ export class UsersService {
         'stabilitySignalS',
         'stabilitySignalM',
         'stabilitySignalL',
+        'socketPort',
+        'pixelStreamUrl',
         'createdAt',
         'updatedAt',
       ],
@@ -282,6 +327,8 @@ export class UsersService {
         'stabilitySignalS',
         'stabilitySignalM',
         'stabilitySignalL',
+        'socketPort',
+        'pixelStreamUrl',
         'createdAt',
         'updatedAt',
       ],
@@ -310,6 +357,8 @@ export class UsersService {
       stabilitySignalS: userWithWallets.stabilitySignalS ?? 0,
       stabilitySignalM: userWithWallets.stabilitySignalM ?? 0,
       stabilitySignalL: userWithWallets.stabilitySignalL ?? 0,
+      socketPort: userWithWallets.socketPort,
+      pixelStreamUrl: userWithWallets.pixelStreamUrl,
       createdAt: userWithWallets.createdAt,
       updatedAt: userWithWallets.updatedAt,
       wallets: userWithWallets.wallets || [],

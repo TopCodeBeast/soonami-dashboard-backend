@@ -162,6 +162,12 @@ export class UserResponseDto {
   @ApiProperty()
   updatedAt: Date;
 
+  @ApiProperty({ required: false, description: 'Assigned dedicated socket port' })
+  socketPort?: number;
+
+  @ApiProperty({ required: false, description: 'Assigned dedicated Pixel Streaming URL' })
+  pixelStreamUrl?: string;
+
   @ApiProperty()
   wallets: any[];
 }
