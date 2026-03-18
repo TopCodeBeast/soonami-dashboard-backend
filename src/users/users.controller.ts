@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Body,
   Patch,
   Param,
@@ -12,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { UsersService } from './users.service';
-import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
+import { CreateUserDto, SaveGameDto, UpdateUserDto } from './dto/user.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { GemTransactionType } from './entities/gem-transaction.entity';
 import { UserItemsService } from './user-items.service';
@@ -51,6 +52,22 @@ export class UsersController {
   @ApiResponse({ status: 200, description: 'Profile retrieved successfully' })
   async getProfile(@Request() req: any) {
     return this.usersService.getProfile(req.user.userId);
+  }
+
+  @Get('me/game-save')
+  @ApiOperation({ summary: 'Get current user game save data' })
+  @ApiResponse({ status: 200, description: 'Game save data retrieved successfully' })
+  async getMyGameSave(@Request() req: any) {
+    const saveData = await this.usersService.getGameSave(req.user.userId);
+    return { saveData };
+  }
+
+  @Put('me/game-save')
+  @ApiOperation({ summary: 'Save current user game save data' })
+  @ApiResponse({ status: 200, description: 'Game save data saved successfully' })
+  async saveMyGameSave(@Body() body: SaveGameDto, @Request() req: any) {
+    await this.usersService.saveGameSave(req.user.userId, body.saveData);
+    return { ok: true };
   }
 
   @Get('items')

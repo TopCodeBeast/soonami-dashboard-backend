@@ -57,6 +57,9 @@ export class User {
   @Column({ type: 'varchar', nullable: true, unique: true })
   pixelStreamUrl: string;
 
+  @Column({ type: 'text', nullable: true })
+  gameSaveData: string | null;
+
   // Stabilizer Signal (Pixelstream time) - 1:1 ratio signal%:minutes
   @Column({ type: 'float', default: 0 })
   stabilitySignalRemainingMinutes: number;

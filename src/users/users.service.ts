@@ -151,6 +151,32 @@ export class UsersService {
     });
   }
 
+  async getGameSave(userId: string): Promise<string | null> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['id', 'gameSaveData'],
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return user.gameSaveData ?? null;
+  }
+
+  async saveGameSave(userId: string, saveData: string): Promise<void> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: ['id'],
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    await this.userRepository.update(userId, { gameSaveData: saveData });
+  }
+
   async update(
     id: string,
     updateUserDto: UpdateUserDto,

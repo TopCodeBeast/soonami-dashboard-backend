@@ -171,3 +171,12 @@ export class UserResponseDto {
   @ApiProperty()
   wallets: any[];
 }
+
+export class SaveGameDto {
+  @ApiProperty({
+    example: '{"key":"value","number":42}',
+    description: 'Raw JSON string from Unreal save file',
+  })
+  @IsString()
+  saveData: string;
+}
