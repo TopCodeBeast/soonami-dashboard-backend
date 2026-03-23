@@ -299,16 +299,6 @@ export class UsersService {
     // Extract transaction fields before updating user (they're not part of User entity)
     const { gemTransactionReason, gemTransactionMetadata, ...userUpdateData } = updateUserDto;
     
-    if (typeof updateUserDto.socketPort === 'number') {
-      const existingPortOwner = await this.userRepository.findOne({
-        where: { socketPort: updateUserDto.socketPort },
-        select: ['id'],
-      });
-      if (existingPortOwner && existingPortOwner.id !== id) {
-        throw new ConflictException('Socket port is already assigned to another user');
-      }
-    }
-
     try {
       await this.userRepository.update(id, userUpdateData);
     } catch (error: any) {
