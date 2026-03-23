@@ -15,6 +15,7 @@ import { CodeStorageService } from './services/code-storage.service';
 import { TokenService } from './services/token.service';
 import { StampsService } from '../stamps/stamps.service';
 import { validateName } from './utils/name-validator';
+import { getAssignmentForUser } from '../users/utils/pixel-stream-assignment';
 
 /** soonami-dashboard-frontend: no token in DB, no expiry; login with JWT only */
 const DASHBOARD_FRONTEND = 'soonami-dashboard-frontend';
@@ -30,6 +31,30 @@ export class AuthService {
     private tokenService: TokenService,
     private stampsService: StampsService,
   ) {}
+
+  private async ensurePixelStreamAssignment(user: User): Promise<User> {
+    const needsSocketPort = user.socketPort == null;
+    const needsPixelStreamUrl = !user.pixelStreamUrl;
+    if (!needsSocketPort && !needsPixelStreamUrl) {
+      return user;
+    }
+
+    const assignment = getAssignmentForUser(user.id);
+    const updatedFields: Partial<User> = {};
+    if (needsSocketPort && assignment.socketPort != null) {
+      updatedFields.socketPort = assignment.socketPort;
+      user.socketPort = assignment.socketPort;
+    }
+    if (needsPixelStreamUrl && assignment.pixelStreamUrl) {
+      updatedFields.pixelStreamUrl = assignment.pixelStreamUrl;
+      user.pixelStreamUrl = assignment.pixelStreamUrl;
+    }
+
+    if (Object.keys(updatedFields).length > 0) {
+      await this.userRepository.update(user.id, updatedFields);
+    }
+    return user;
+  }
 
   async validateUser(email: string, password: string): Promise<any> {
     // Legacy method - password-based login is no longer supported
@@ -53,6 +78,7 @@ export class AuthService {
     // Update last login
     await this.userRepository.update(user.id, { lastLoginAt: new Date() });
 
+    await this.ensurePixelStreamAssignment(user);
     const payload = { email: user.email, sub: user.id, role: user.role };
     const accessToken = this.jwtService.sign(payload, {
       secret: process.env.JWT_SECRET,
@@ -79,6 +105,8 @@ export class AuthService {
         email: user.email,
         role: user.role,
         gem: user.gem,
+        socketPort: user.socketPort,
+        pixelStreamUrl: user.pixelStreamUrl,
         wallets: userWithWallets?.wallets || [],
       },
     };
@@ -210,6 +238,7 @@ export class AuthService {
       });
 
       const savedUser = await this.userRepository.save(user);
+      await this.ensurePixelStreamAssignment(savedUser);
       throw new UnauthorizedException(
         'Your account has been created. An administrator must activate your account before you can log in.',
       );
@@ -226,6 +255,8 @@ export class AuthService {
       // This endpoint is used by both the dashboard and the Python project,
       // so we allow all active users to authenticate here
       
+      await this.ensurePixelStreamAssignment(existingUser);
+
       // IMPORTANT: Collect daily stamp BEFORE updating lastLoginAt
       // Otherwise the 24-hour cooldown check will fail because lastLoginAt will be "now"
       let stampInfo = null;
@@ -311,6 +342,8 @@ export class AuthService {
           email: existingUser.email,
           role: existingUser.role,
           gem: existingUser.gem,
+          socketPort: existingUser.socketPort,
+          pixelStreamUrl: existingUser.pixelStreamUrl,
           isActive: existingUser.isActive,
           lastLoginAt: existingUser.lastLoginAt,
           stampsCollected: existingUser.stampsCollected,
@@ -379,6 +412,8 @@ export class AuthService {
       throw new UnauthorizedException('Direct login only available for administrators and managers');
     }
     
+    await this.ensurePixelStreamAssignment(user);
+
     // Update last login
     await this.userRepository.update(user.id, { lastLoginAt: new Date() });
     
@@ -438,6 +473,8 @@ export class AuthService {
         email: user.email,
         role: user.role,
         gem: user.gem,
+        socketPort: user.socketPort,
+        pixelStreamUrl: user.pixelStreamUrl,
         isActive: user.isActive,
         lastLoginAt: user.lastLoginAt,
         stampsCollected: user.stampsCollected,
@@ -527,6 +564,7 @@ export class AuthService {
         relations: ['wallets'],
       });
       if (!user || !user.isActive) return { valid: false };
+      await this.ensurePixelStreamAssignment(user);
       return {
         valid: true,
         user: {
@@ -535,6 +573,8 @@ export class AuthService {
           email: user.email,
           role: user.role,
           gem: user.gem,
+          socketPort: user.socketPort,
+          pixelStreamUrl: user.pixelStreamUrl,
           isActive: user.isActive,
           wallets: user.wallets || [],
         },
@@ -551,6 +591,7 @@ export class AuthService {
         relations: ['wallets'],
       });
       if (!user || !user.isActive) return { valid: false };
+      await this.ensurePixelStreamAssignment(user);
       return {
         valid: true,
         user: {
@@ -559,6 +600,8 @@ export class AuthService {
           email: user.email,
           role: user.role,
           gem: user.gem,
+          socketPort: user.socketPort,
+          pixelStreamUrl: user.pixelStreamUrl,
           isActive: user.isActive,
           wallets: user.wallets || [],
         },

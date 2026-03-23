@@ -51,6 +51,12 @@ export class User {
   @Column({ nullable: true })
   firstStampClaimDate: Date;
 
+  @Column({ type: 'int', nullable: true })
+  socketPort: number;
+
+  @Column({ nullable: true })
+  pixelStreamUrl: string;
+
   // Stabilizer Signal (Pixelstream time) - 1:1 ratio signal%:minutes
   @Column({ type: 'float', default: 0 })
   stabilitySignalRemainingMinutes: number;

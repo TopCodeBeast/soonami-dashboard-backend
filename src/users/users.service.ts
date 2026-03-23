@@ -12,6 +12,7 @@ import { RoleHierarchy } from './utils/role-hierarchy';
 import { ManagerWhitelist } from './utils/manager-whitelist';
 import { GemTransactionsService } from './gem-transactions.service';
 import { GemTransactionType } from './entities/gem-transaction.entity';
+import { getAssignmentForUser } from './utils/pixel-stream-assignment';
 // Wallet import - table may not exist, queries are wrapped in try-catch
 import { Wallet } from '../wallets/entities/wallet.entity';
 import { GemTransaction } from './entities/gem-transaction.entity';
@@ -27,6 +28,30 @@ export class UsersService {
     private readonly gemTransactionRepository: Repository<GemTransaction>,
     private readonly gemTransactionsService: GemTransactionsService,
   ) {}
+
+  private async ensurePixelStreamAssignment(user: User): Promise<User> {
+    const needsSocketPort = user.socketPort == null;
+    const needsPixelStreamUrl = !user.pixelStreamUrl;
+    if (!needsSocketPort && !needsPixelStreamUrl) {
+      return user;
+    }
+
+    const assignment = getAssignmentForUser(user.id);
+    const updatedFields: Partial<User> = {};
+    if (needsSocketPort && assignment.socketPort != null) {
+      updatedFields.socketPort = assignment.socketPort;
+      user.socketPort = assignment.socketPort;
+    }
+    if (needsPixelStreamUrl && assignment.pixelStreamUrl) {
+      updatedFields.pixelStreamUrl = assignment.pixelStreamUrl;
+      user.pixelStreamUrl = assignment.pixelStreamUrl;
+    }
+
+    if (Object.keys(updatedFields).length > 0) {
+      await this.userRepository.update(user.id, updatedFields);
+    }
+    return user;
+  }
 
   async create(createUserDto: CreateUserDto, currentUserRole: UserRole, currentUserEmail: string) {
     // Only managers and admins can create users
@@ -57,6 +82,7 @@ export class UsersService {
     });
 
     const savedUser = await this.userRepository.save(user);
+    await this.ensurePixelStreamAssignment(savedUser);
     return savedUser;
   }
 
@@ -68,11 +94,27 @@ export class UsersService {
 
     const users = await this.userRepository.find({
       relations: ['wallets'],
-      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt', 'gem'],
+      select: [
+        'id',
+        'name',
+        'email',
+        'role',
+        'isActive',
+        'lastLoginAt',
+        'createdAt',
+        'updatedAt',
+        'gem',
+        'socketPort',
+        'pixelStreamUrl',
+      ],
     });
     
+    const usersWithAssignments = await Promise.all(
+      users.map(async (user) => this.ensurePixelStreamAssignment(user)),
+    );
+
     // Return users with wallets (or empty array if none)
-    return users.map(user => ({
+    return usersWithAssignments.map(user => ({
       ...user,
       wallets: user.wallets || [],
     }));
@@ -87,12 +129,25 @@ export class UsersService {
     const user = await this.userRepository.findOne({
       where: { id },
       relations: ['wallets'],
-      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt', 'gem'],
+      select: [
+        'id',
+        'name',
+        'email',
+        'role',
+        'isActive',
+        'lastLoginAt',
+        'createdAt',
+        'updatedAt',
+        'gem',
+        'socketPort',
+        'pixelStreamUrl',
+      ],
     });
 
     if (!user) {
       throw new NotFoundException('User not found');
     }
+    await this.ensurePixelStreamAssignment(user);
 
     // Return user with wallets (or empty array if none)
     return {
@@ -104,7 +159,19 @@ export class UsersService {
   async findByEmail(email: string) {
     return this.userRepository.findOne({
       where: { email },
-      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt', 'gem'],
+      select: [
+        'id',
+        'name',
+        'email',
+        'role',
+        'isActive',
+        'lastLoginAt',
+        'createdAt',
+        'updatedAt',
+        'gem',
+        'socketPort',
+        'pixelStreamUrl',
+      ],
     });
   }
 
@@ -238,6 +305,8 @@ export class UsersService {
         'gem',
         'role',
         'isActive',
+        'socketPort',
+        'pixelStreamUrl',
         'lastLoginAt',
         'stampsCollected',
         'lastStampClaimDate',
@@ -257,6 +326,7 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
+    await this.ensurePixelStreamAssignment(user);
 
     console.log(`✅ Profile fetched for user ${currentUserId} with ${user.stampsCollected || 0} stamps`);
     
@@ -271,6 +341,8 @@ export class UsersService {
         'gem',
         'role',
         'isActive',
+        'socketPort',
+        'pixelStreamUrl',
         'lastLoginAt',
         'stampsCollected',
         'lastStampClaimDate',
@@ -290,6 +362,7 @@ export class UsersService {
     if (!userWithWallets) {
       throw new NotFoundException('User not found');
     }
+    await this.ensurePixelStreamAssignment(userWithWallets);
 
     // Return user with wallets and stability signal fields
     return {
@@ -299,6 +372,8 @@ export class UsersService {
       gem: userWithWallets.gem,
       role: userWithWallets.role,
       isActive: userWithWallets.isActive,
+      socketPort: userWithWallets.socketPort,
+      pixelStreamUrl: userWithWallets.pixelStreamUrl,
       lastLoginAt: userWithWallets.lastLoginAt,
       stampsCollected: userWithWallets.stampsCollected,
       lastStampClaimDate: userWithWallets.lastStampClaimDate,
