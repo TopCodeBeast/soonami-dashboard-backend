@@ -89,6 +89,20 @@ export class UsersService {
     return user;
   }
 
+  private mapDatabaseError(error: any): never {
+    if (error?.code === '23505') {
+      const detail = String(error?.detail || '');
+      if (detail.includes('socketPort')) {
+        throw new ConflictException('Socket port is already assigned to another user');
+      }
+      if (detail.includes('email')) {
+        throw new ConflictException('Email already exists');
+      }
+      throw new ConflictException('Duplicate value violates a unique constraint');
+    }
+    throw error;
+  }
+
   async create(createUserDto: CreateUserDto, currentUserRole: UserRole, currentUserEmail: string) {
     // Only managers and admins can create users
     if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole)) {
@@ -117,7 +131,12 @@ export class UsersService {
       ...createUserDto,
     });
 
-    const savedUser = await this.userRepository.save(user);
+    let savedUser: User;
+    try {
+      savedUser = await this.userRepository.save(user);
+    } catch (error: any) {
+      this.mapDatabaseError(error);
+    }
     await this.ensurePixelStreamAssignment(savedUser);
     return savedUser;
   }
@@ -280,7 +299,21 @@ export class UsersService {
     // Extract transaction fields before updating user (they're not part of User entity)
     const { gemTransactionReason, gemTransactionMetadata, ...userUpdateData } = updateUserDto;
     
-    await this.userRepository.update(id, userUpdateData);
+    if (typeof updateUserDto.socketPort === 'number') {
+      const existingPortOwner = await this.userRepository.findOne({
+        where: { socketPort: updateUserDto.socketPort },
+        select: ['id'],
+      });
+      if (existingPortOwner && existingPortOwner.id !== id) {
+        throw new ConflictException('Socket port is already assigned to another user');
+      }
+    }
+
+    try {
+      await this.userRepository.update(id, userUpdateData);
+    } catch (error: any) {
+      this.mapDatabaseError(error);
+    }
 
     if (gemChange && gemChange !== 0) {
       // Reload user to get updated gem value
