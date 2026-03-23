@@ -370,4 +370,58 @@ export class TokenService {
 
     return expiredByTimeCount + expiredByBrowserCloseCount;
   }
+
+  /**
+   * Backfill frontendService slot metadata for existing Python frontend tokens.
+   * Example: python-ai-frontend -> python-ai-frontend|slot:0
+   */
+  async migrateExistingFrontendSlots(
+    targetFrontend = 'python-ai-frontend',
+    slotCount = 5,
+    dryRun = false,
+  ): Promise<{
+    totalCandidates: number;
+    updated: number;
+    slotCount: number;
+    targetFrontend: string;
+    dryRun: boolean;
+    sample: Array<{ id: string; userId: string; before: string | null; after: string }>;
+  }> {
+    const normalizedSlotCount = Number(slotCount) > 0 ? Number(slotCount) : 5;
+
+    const tokens = await this.tokenRepository
+      .createQueryBuilder('token')
+      .where('token.isActive = :isActive', { isActive: true })
+      .andWhere('(token.frontendService IS NULL OR token.frontendService = :targetFrontend)', {
+        targetFrontend,
+      })
+      .orderBy('token.createdAt', 'ASC')
+      .addOrderBy('token.id', 'ASC')
+      .getMany();
+
+    const updates = tokens.map((token, index) => {
+      const slotIndex = index % normalizedSlotCount;
+      return {
+        id: token.id,
+        userId: token.userId,
+        before: token.frontendService ?? null,
+        after: `${targetFrontend}|slot:${slotIndex}`,
+      };
+    });
+
+    if (!dryRun && updates.length > 0) {
+      for (const item of updates) {
+        await this.tokenRepository.update({ id: item.id }, { frontendService: item.after });
+      }
+    }
+
+    return {
+      totalCandidates: tokens.length,
+      updated: dryRun ? 0 : updates.length,
+      slotCount: normalizedSlotCount,
+      targetFrontend,
+      dryRun,
+      sample: updates.slice(0, 20),
+    };
+  }
 }
