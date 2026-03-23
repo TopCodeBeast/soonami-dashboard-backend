@@ -31,14 +31,6 @@ function normalizePixelStreamUrl(url: string): string {
   return parsed.toString();
 }
 
-function computeSlotIndex(userId: string, slotCount: number): number {
-  let hash = 0;
-  for (let i = 0; i < userId.length; i += 1) {
-    hash = (hash * 31 + userId.charCodeAt(i)) >>> 0;
-  }
-  return hash % slotCount;
-}
-
 export class BackfillPixelStreamAssignments1767000002000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     const usersTable = await queryRunner.getTable('users');
@@ -72,15 +64,40 @@ export class BackfillPixelStreamAssignments1767000002000 implements MigrationInt
       SELECT "id", "socketPort", "pixelStreamUrl"
       FROM "users"
       WHERE "socketPort" IS NULL OR "pixelStreamUrl" IS NULL OR "pixelStreamUrl" = ''
+      ORDER BY "createdAt" ASC, "id" ASC
     `);
 
+    const alreadyAssigned: Array<{ id: string; socketPort: number | null }> = await queryRunner.query(`
+      SELECT "id", "socketPort"
+      FROM "users"
+      WHERE "socketPort" IS NOT NULL
+    `);
+    const usedPorts = new Set(
+      alreadyAssigned
+        .map((row) => Number(row.socketPort))
+        .filter((value) => Number.isFinite(value)),
+    );
+
     let updated = 0;
+    let skippedNoFreePort = 0;
     for (const user of users) {
-      const slotIndex = computeSlotIndex(user.id, slotCount);
-      const socketPort = user.socketPort ?? ports[slotIndex];
-      const pixelStreamUrl = user.pixelStreamUrl && user.pixelStreamUrl.trim().length > 0
-        ? user.pixelStreamUrl
-        : urls[slotIndex];
+      let socketPort = user.socketPort;
+      if (socketPort == null) {
+        const freePort = ports.find((port) => !usedPorts.has(port));
+        if (freePort == null) {
+          skippedNoFreePort += 1;
+          continue;
+        }
+        socketPort = freePort;
+      }
+
+      const slotIndex = ports.indexOf(socketPort);
+      const pixelStreamUrl =
+        user.pixelStreamUrl && user.pixelStreamUrl.trim().length > 0
+          ? user.pixelStreamUrl
+          : slotIndex >= 0
+            ? urls[slotIndex]
+            : urls[0];
 
       await queryRunner.query(
         `
@@ -90,10 +107,13 @@ export class BackfillPixelStreamAssignments1767000002000 implements MigrationInt
         `,
         [user.id, socketPort, pixelStreamUrl],
       );
+      usedPorts.add(socketPort);
       updated += 1;
     }
 
-    console.log(`✅ Backfilled pixel stream assignment for ${updated} user(s)`);
+    console.log(
+      `✅ Backfilled pixel stream assignment for ${updated} user(s); skipped ${skippedNoFreePort} (no free socket port)`,
+    );
   }
 
   public async down(): Promise<void> {

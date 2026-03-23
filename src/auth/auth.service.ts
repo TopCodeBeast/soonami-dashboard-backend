@@ -15,7 +15,7 @@ import { CodeStorageService } from './services/code-storage.service';
 import { TokenService } from './services/token.service';
 import { StampsService } from '../stamps/stamps.service';
 import { validateName } from './utils/name-validator';
-import { getAssignmentForUser } from '../users/utils/pixel-stream-assignment';
+import { getPixelStreamConfig } from '../users/utils/pixel-stream-assignment';
 
 /** soonami-dashboard-frontend: no token in DB, no expiry; login with JWT only */
 const DASHBOARD_FRONTEND = 'soonami-dashboard-frontend';
@@ -39,19 +39,53 @@ export class AuthService {
       return user;
     }
 
-    const assignment = getAssignmentForUser(user.id);
-    const updatedFields: Partial<User> = {};
-    if (needsSocketPort && assignment.socketPort != null) {
-      updatedFields.socketPort = assignment.socketPort;
-      user.socketPort = assignment.socketPort;
+    const { ports, urls } = getPixelStreamConfig();
+    if (ports.length === 0 || urls.length === 0) {
+      return user;
     }
-    if (needsPixelStreamUrl && assignment.pixelStreamUrl) {
-      updatedFields.pixelStreamUrl = assignment.pixelStreamUrl;
-      user.pixelStreamUrl = assignment.pixelStreamUrl;
+
+    const usedRows = await this.userRepository
+      .createQueryBuilder('user')
+      .select('user.socketPort', 'socketPort')
+      .where('user.socketPort IS NOT NULL')
+      .andWhere('user.id != :id', { id: user.id })
+      .getRawMany<{ socketPort: string | number }>();
+
+    const usedPorts = new Set(usedRows.map((row) => Number(row.socketPort)).filter((value) => Number.isFinite(value)));
+
+    const resolvedSocketPort =
+      user.socketPort != null ? user.socketPort : ports.find((port) => !usedPorts.has(port)) ?? null;
+
+    if (resolvedSocketPort == null) {
+      return user;
+    }
+
+    const configuredIndex = ports.indexOf(resolvedSocketPort);
+    const resolvedPixelStreamUrl =
+      user.pixelStreamUrl && user.pixelStreamUrl.trim().length > 0
+        ? user.pixelStreamUrl
+        : configuredIndex >= 0
+          ? urls[configuredIndex]
+          : urls[0];
+
+    const updatedFields: Partial<User> = {};
+    if (needsSocketPort) {
+      updatedFields.socketPort = resolvedSocketPort;
+      user.socketPort = resolvedSocketPort;
+    }
+    if (needsPixelStreamUrl && resolvedPixelStreamUrl) {
+      updatedFields.pixelStreamUrl = resolvedPixelStreamUrl;
+      user.pixelStreamUrl = resolvedPixelStreamUrl;
     }
 
     if (Object.keys(updatedFields).length > 0) {
-      await this.userRepository.update(user.id, updatedFields);
+      try {
+        await this.userRepository.update(user.id, updatedFields);
+      } catch (error: any) {
+        if (error?.code !== '23505') {
+          throw error;
+        }
+      }
     }
     return user;
   }

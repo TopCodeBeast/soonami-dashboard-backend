@@ -12,7 +12,7 @@ import { RoleHierarchy } from './utils/role-hierarchy';
 import { ManagerWhitelist } from './utils/manager-whitelist';
 import { GemTransactionsService } from './gem-transactions.service';
 import { GemTransactionType } from './entities/gem-transaction.entity';
-import { getAssignmentForUser } from './utils/pixel-stream-assignment';
+import { getPixelStreamConfig } from './utils/pixel-stream-assignment';
 // Wallet import - table may not exist, queries are wrapped in try-catch
 import { Wallet } from '../wallets/entities/wallet.entity';
 import { GemTransaction } from './entities/gem-transaction.entity';
@@ -36,19 +36,55 @@ export class UsersService {
       return user;
     }
 
-    const assignment = getAssignmentForUser(user.id);
-    const updatedFields: Partial<User> = {};
-    if (needsSocketPort && assignment.socketPort != null) {
-      updatedFields.socketPort = assignment.socketPort;
-      user.socketPort = assignment.socketPort;
+    const { ports, urls } = getPixelStreamConfig();
+    if (ports.length === 0 || urls.length === 0) {
+      return user;
     }
-    if (needsPixelStreamUrl && assignment.pixelStreamUrl) {
-      updatedFields.pixelStreamUrl = assignment.pixelStreamUrl;
-      user.pixelStreamUrl = assignment.pixelStreamUrl;
+
+    const usedRows = await this.userRepository
+      .createQueryBuilder('user')
+      .select('user.socketPort', 'socketPort')
+      .where('user.socketPort IS NOT NULL')
+      .andWhere('user.id != :id', { id: user.id })
+      .getRawMany<{ socketPort: string | number }>();
+
+    const usedPorts = new Set(usedRows.map((row) => Number(row.socketPort)).filter((value) => Number.isFinite(value)));
+
+    const resolvedSocketPort =
+      user.socketPort != null ? user.socketPort : ports.find((port) => !usedPorts.has(port)) ?? null;
+
+    if (resolvedSocketPort == null) {
+      // No free unique socket port available in configured pool.
+      return user;
+    }
+
+    const configuredIndex = ports.indexOf(resolvedSocketPort);
+    const resolvedPixelStreamUrl =
+      user.pixelStreamUrl && user.pixelStreamUrl.trim().length > 0
+        ? user.pixelStreamUrl
+        : configuredIndex >= 0
+          ? urls[configuredIndex]
+          : urls[0];
+
+    const updatedFields: Partial<User> = {};
+    if (needsSocketPort) {
+      updatedFields.socketPort = resolvedSocketPort;
+      user.socketPort = resolvedSocketPort;
+    }
+    if (needsPixelStreamUrl && resolvedPixelStreamUrl) {
+      updatedFields.pixelStreamUrl = resolvedPixelStreamUrl;
+      user.pixelStreamUrl = resolvedPixelStreamUrl;
     }
 
     if (Object.keys(updatedFields).length > 0) {
-      await this.userRepository.update(user.id, updatedFields);
+      try {
+        await this.userRepository.update(user.id, updatedFields);
+      } catch (error: any) {
+        // Another request may have consumed the same free port concurrently.
+        if (error?.code !== '23505') {
+          throw error;
+        }
+      }
     }
     return user;
   }
