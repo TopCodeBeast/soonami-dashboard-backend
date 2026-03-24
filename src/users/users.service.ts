@@ -450,6 +450,41 @@ export class UsersService {
     };
   }
 
+  async getGameSaveFile(currentUserId: string) {
+    const user = await this.userRepository.findOne({
+      where: { id: currentUserId },
+      select: ['id', 'gameSaveFile'],
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return {
+      jsonString: user.gameSaveFile || '',
+    };
+  }
+
+  async updateGameSaveFile(currentUserId: string, jsonString: string) {
+    const user = await this.userRepository.findOne({
+      where: { id: currentUserId },
+      select: ['id'],
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    await this.userRepository.update(currentUserId, {
+      gameSaveFile: jsonString || '',
+    });
+
+    return {
+      success: true,
+      updated: true,
+    };
+  }
+
   async getTopGemHolders(limit = 10, currentUserRole: UserRole) {
     if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole)) {
       throw new ForbiddenException('Only managers and admins can view gem leaderboards');

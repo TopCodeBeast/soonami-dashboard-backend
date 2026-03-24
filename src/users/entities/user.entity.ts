@@ -57,6 +57,9 @@ export class User {
   @Column({ nullable: true })
   pixelStreamUrl: string;
 
+  @Column({ type: 'text', nullable: true })
+  gameSaveFile: string | null;
+
   // Stabilizer Signal (Pixelstream time) - 1:1 ratio signal%:minutes
   @Column({ type: 'float', default: 0 })
   stabilitySignalRemainingMinutes: number;
