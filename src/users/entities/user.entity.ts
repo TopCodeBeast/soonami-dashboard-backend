@@ -73,15 +73,6 @@ export class User {
   @Column({ nullable: true })
   stabilitySignalLastActivityAt: Date;
 
-  @Column({ default: 0 })
-  stabilitySignalS: number;
-
-  @Column({ default: 0 })
-  stabilitySignalM: number;
-
-  @Column({ default: 0 })
-  stabilitySignalL: number;
-
   @OneToMany(() => UserItem, (userItem) => userItem.user, { cascade: true })
   userItems: UserItem[];
 

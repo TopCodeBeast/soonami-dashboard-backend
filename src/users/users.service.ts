@@ -161,6 +161,7 @@ export class UsersService {
         'gem',
         'socketPort',
         'pixelStreamUrl',
+        'gameSaveFile',
       ],
     });
     
@@ -196,6 +197,7 @@ export class UsersService {
         'gem',
         'socketPort',
         'pixelStreamUrl',
+        'gameSaveFile',
       ],
     });
 
@@ -226,6 +228,7 @@ export class UsersService {
         'gem',
         'socketPort',
         'pixelStreamUrl',
+        'gameSaveFile',
       ],
     });
   }
@@ -284,7 +287,6 @@ export class UsersService {
       'gem', 'gemTransactionReason', 'gemTransactionMetadata',
       'stabilitySignalRemainingMinutes', 'stabilitySignalFullCapacityMinutes',
       'stabilitySignalPausedAt', 'stabilitySignalLastActivityAt',
-      'stabilitySignalS', 'stabilitySignalM', 'stabilitySignalL',
     ];
     const isOnlyUpdatingGemsOrStability = Object.keys(updateUserDto).every(key =>
       ALLOWED_SELF_UPDATE_KEYS.includes(key),
@@ -400,9 +402,6 @@ export class UsersService {
         'stabilitySignalFullCapacityMinutes',
         'stabilitySignalPausedAt',
         'stabilitySignalLastActivityAt',
-        'stabilitySignalS',
-        'stabilitySignalM',
-        'stabilitySignalL',
         'socketPort',
         'pixelStreamUrl',
         'createdAt',
@@ -438,9 +437,6 @@ export class UsersService {
         'stabilitySignalFullCapacityMinutes',
         'stabilitySignalPausedAt',
         'stabilitySignalLastActivityAt',
-        'stabilitySignalS',
-        'stabilitySignalM',
-        'stabilitySignalL',
         'socketPort',
         'pixelStreamUrl',
         'createdAt',
@@ -471,9 +467,6 @@ export class UsersService {
       stabilitySignalFullCapacityMinutes: userWithWallets.stabilitySignalFullCapacityMinutes ?? 60,
       stabilitySignalPausedAt: userWithWallets.stabilitySignalPausedAt,
       stabilitySignalLastActivityAt: userWithWallets.stabilitySignalLastActivityAt,
-      stabilitySignalS: userWithWallets.stabilitySignalS ?? 0,
-      stabilitySignalM: userWithWallets.stabilitySignalM ?? 0,
-      stabilitySignalL: userWithWallets.stabilitySignalL ?? 0,
       createdAt: userWithWallets.createdAt,
       updatedAt: userWithWallets.updatedAt,
       wallets: userWithWallets.wallets || [],
