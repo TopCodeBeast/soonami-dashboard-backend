@@ -73,6 +73,15 @@ export class ReassignExistingUsersToDefaultStreamSlots1769200000000
       return;
     }
 
+    // This migration intentionally reuses a small slot pool (13371~13373), so
+    // per-column uniqueness on users.socketPort/users.pixelStreamUrl must be dropped.
+    await queryRunner.query(`
+      DROP INDEX IF EXISTS "public"."IDX_users_socketPort_unique";
+    `);
+    await queryRunner.query(`
+      DROP INDEX IF EXISTS "public"."IDX_users_pixelStreamUrl_unique";
+    `);
+
     const users = (await queryRunner.query(
       `SELECT id FROM users ORDER BY "createdAt" ASC`,
     )) as UserRow[];
@@ -92,6 +101,8 @@ export class ReassignExistingUsersToDefaultStreamSlots1769200000000
   }
 
   public async down(_queryRunner: QueryRunner): Promise<void> {
-    console.log('ℹ️  ReassignExistingUsersToDefaultStreamSlots migration is irreversible');
+    console.log(
+      'ℹ️  ReassignExistingUsersToDefaultStreamSlots migration is irreversible (assignments and index drops are preserved)',
+    );
   }
 }
