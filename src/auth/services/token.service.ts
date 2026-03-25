@@ -377,7 +377,7 @@ export class TokenService {
    */
   async migrateExistingFrontendSlots(
     targetFrontend = 'python-ai-frontend',
-    slotCount = 5,
+    slotCount = 3,
     dryRun = false,
   ): Promise<{
     totalCandidates: number;
@@ -387,7 +387,7 @@ export class TokenService {
     dryRun: boolean;
     sample: Array<{ id: string; userId: string; before: string | null; after: string }>;
   }> {
-    const normalizedSlotCount = Number(slotCount) > 0 ? Number(slotCount) : 5;
+    const normalizedSlotCount = Number(slotCount) > 0 ? Number(slotCount) : 3;
 
     const tokens = await this.tokenRepository
       .createQueryBuilder('token')

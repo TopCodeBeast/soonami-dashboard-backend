@@ -256,7 +256,7 @@ export class AuthController {
     }
 
     const targetFrontend = body?.targetFrontend || 'python-ai-frontend';
-    const slotCount = Number(body?.slotCount || 5);
+    const slotCount = Number(body?.slotCount || 3);
     const dryRun = Boolean(body?.dryRun);
 
     return this.tokenService.migrateExistingFrontendSlots(targetFrontend, slotCount, dryRun);
