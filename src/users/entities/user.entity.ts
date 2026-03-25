@@ -51,14 +51,14 @@ export class User {
   @Column({ nullable: true })
   firstStampClaimDate: Date;
 
-  @Column({ type: 'int', nullable: true, unique: true })
+  @Column({ type: 'int', nullable: true })
   socketPort: number;
 
-  @Column({ type: 'varchar', nullable: true, unique: true })
+  @Column({ nullable: true })
   pixelStreamUrl: string;
 
   @Column({ type: 'text', nullable: true })
-  gameSaveData: string | null;
+  gameSaveFile: string | null;
 
   // Stabilizer Signal (Pixelstream time) - 1:1 ratio signal%:minutes
   @Column({ type: 'float', default: 0 })

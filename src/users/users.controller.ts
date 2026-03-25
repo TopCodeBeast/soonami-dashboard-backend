@@ -19,6 +19,12 @@ import { GemTransactionType } from './entities/gem-transaction.entity';
 import { UserItemsService } from './user-items.service';
 import { UserItemType } from './entities/user-item.entity';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { IsString } from 'class-validator';
+
+class UpdateGameSaveFileDto {
+  @IsString()
+  jsonString: string;
+}
 
 @ApiTags('Users')
 @Controller('users')
@@ -68,6 +74,20 @@ export class UsersController {
   async saveMyGameSave(@Body() body: SaveGameDto, @Request() req: any) {
     await this.usersService.saveGameSave(req.user.userId, body.saveData);
     return { ok: true };
+  }
+
+  @Get('game-save-file')
+  @ApiOperation({ summary: 'Get current user game save file' })
+  @ApiResponse({ status: 200, description: 'Game save file retrieved successfully' })
+  async getGameSaveFile(@Request() req: any) {
+    return this.usersService.getGameSaveFile(req.user.userId);
+  }
+
+  @Post('game-save-file')
+  @ApiOperation({ summary: 'Update current user game save file' })
+  @ApiResponse({ status: 200, description: 'Game save file updated successfully' })
+  async updateGameSaveFile(@Body() body: UpdateGameSaveFileDto, @Request() req: any) {
+    return this.usersService.updateGameSaveFile(req.user.userId, body?.jsonString ?? '');
   }
 
   @Get('items')

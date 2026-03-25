@@ -2,6 +2,12 @@ import { MigrationInterface, QueryRunner, Table, TableForeignKey, TableIndex } f
 
 export class CreateWalletsTable1766000001000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
+    const existing = await queryRunner.getTable('wallets');
+    if (existing) {
+      console.log('ℹ️  Wallets table already exists (created in CreateUsersTable) — skipping CreateWalletsTable');
+      return;
+    }
+
     await queryRunner.createTable(
       new Table({
         name: 'wallets',

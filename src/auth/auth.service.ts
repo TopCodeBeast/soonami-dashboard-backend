@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User, UserRole } from '../users/entities/user.entity';
 import { LoginDto, RegisterDto, ChangePasswordDto, RequestCodeDto, VerifyCodeDto, RevokeAllSessionsDto, CheckUserDto, CheckTokenDto } from './dto/auth.dto';
@@ -15,7 +15,7 @@ import { CodeStorageService } from './services/code-storage.service';
 import { TokenService } from './services/token.service';
 import { StampsService } from '../stamps/stamps.service';
 import { validateName } from './utils/name-validator';
-import { getNextAvailableStreamAssignment } from '../users/utils/stream-assignment';
+import { getPixelStreamConfig } from '../users/utils/pixel-stream-assignment';
 
 /** soonami-dashboard-frontend: no token in DB, no expiry; login with JWT only */
 const DASHBOARD_FRONTEND = 'soonami-dashboard-frontend';
@@ -32,46 +32,62 @@ export class AuthService {
     private stampsService: StampsService,
   ) {}
 
-  private async assignStreamForUser(userId: string): Promise<User> {
-    const maxAttempts = 5;
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const current = await this.userRepository.findOne({ where: { id: userId } });
-      if (!current) {
-        throw new UnauthorizedException('User not found');
-      }
-
-      if (current.socketPort && current.pixelStreamUrl) {
-        return current;
-      }
-
-      const users = await this.userRepository.find({
-        select: ['id', 'socketPort', 'pixelStreamUrl'],
-      });
-      const assignment = getNextAvailableStreamAssignment(users);
-
-      try {
-        await this.userRepository.update(userId, assignment);
-        const updated = await this.userRepository.findOne({ where: { id: userId } });
-        if (!updated) {
-          throw new UnauthorizedException('User not found after stream assignment');
-        }
-        return updated;
-      } catch (error) {
-        if (
-          error instanceof QueryFailedError &&
-          (error as any).driverError?.code === '23505' &&
-          attempt < maxAttempts
-        ) {
-          continue;
-        }
-        throw error;
-      }
+  private async ensurePixelStreamAssignment(user: User): Promise<User> {
+    const needsSocketPort = user.socketPort == null;
+    const needsPixelStreamUrl = !user.pixelStreamUrl;
+    if (!needsSocketPort && !needsPixelStreamUrl) {
+      return user;
     }
 
-    throw new ConflictException(
-      'Failed to assign unique socket port and pixel stream URL to user',
-    );
+    const { ports, urls } = getPixelStreamConfig();
+    if (ports.length === 0 || urls.length === 0) {
+      return user;
+    }
+
+    const usedRows = await this.userRepository
+      .createQueryBuilder('user')
+      .select('user.socketPort', 'socketPort')
+      .where('user.socketPort IS NOT NULL')
+      .andWhere('user.id != :id', { id: user.id })
+      .getRawMany<{ socketPort: string | number }>();
+
+    const usedPorts = new Set(usedRows.map((row) => Number(row.socketPort)).filter((value) => Number.isFinite(value)));
+
+    const resolvedSocketPort =
+      user.socketPort != null ? user.socketPort : ports.find((port) => !usedPorts.has(port)) ?? null;
+
+    if (resolvedSocketPort == null) {
+      return user;
+    }
+
+    const configuredIndex = ports.indexOf(resolvedSocketPort);
+    const resolvedPixelStreamUrl =
+      user.pixelStreamUrl && user.pixelStreamUrl.trim().length > 0
+        ? user.pixelStreamUrl
+        : configuredIndex >= 0
+          ? urls[configuredIndex]
+          : urls[0];
+
+    const updatedFields: Partial<User> = {};
+    if (needsSocketPort) {
+      updatedFields.socketPort = resolvedSocketPort;
+      user.socketPort = resolvedSocketPort;
+    }
+    if (needsPixelStreamUrl && resolvedPixelStreamUrl) {
+      updatedFields.pixelStreamUrl = resolvedPixelStreamUrl;
+      user.pixelStreamUrl = resolvedPixelStreamUrl;
+    }
+
+    if (Object.keys(updatedFields).length > 0) {
+      try {
+        await this.userRepository.update(user.id, updatedFields);
+      } catch (error: any) {
+        if (error?.code !== '23505') {
+          throw error;
+        }
+      }
+    }
+    return user;
   }
 
   async validateUser(email: string, password: string): Promise<any> {
@@ -93,12 +109,9 @@ export class AuthService {
       );
     }
 
-    const assignedUser = await this.assignStreamForUser(user.id);
-
-    // Update last login
-    await this.userRepository.update(assignedUser.id, { lastLoginAt: new Date() });
-
-    const payload = { email: assignedUser.email, sub: assignedUser.id, role: assignedUser.role };
+    await this.ensurePixelStreamAssignment(user);
+    const payload = { email: user.email, sub: user.id, role: user.role };
+    await this.userRepository.update(user.id, { lastLoginAt: new Date() });
     const accessToken = this.jwtService.sign(payload, {
       secret: process.env.JWT_SECRET,
       expiresIn: process.env.JWT_EXPIRES_IN || '15m',
@@ -111,7 +124,7 @@ export class AuthService {
 
     // Reload user with wallets relation
     const userWithWallets = await this.userRepository.findOne({
-      where: { id: assignedUser.id },
+      where: { id: user.id },
       relations: ['wallets'],
     });
     
@@ -119,13 +132,13 @@ export class AuthService {
       accessToken,
       refreshToken,
       user: {
-        id: assignedUser.id,
-        name: assignedUser.name,
-        email: assignedUser.email,
-        role: assignedUser.role,
-        gem: assignedUser.gem,
-        socketPort: userWithWallets?.socketPort ?? assignedUser.socketPort,
-        pixelStreamUrl: userWithWallets?.pixelStreamUrl ?? assignedUser.pixelStreamUrl,
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        gem: user.gem,
+        socketPort: userWithWallets?.socketPort ?? user.socketPort,
+        pixelStreamUrl: userWithWallets?.pixelStreamUrl ?? user.pixelStreamUrl,
         wallets: userWithWallets?.wallets || [],
       },
     };
@@ -150,7 +163,7 @@ export class AuthService {
     });
 
     const savedUser = await this.userRepository.save(user);
-    return this.assignStreamForUser(savedUser.id);
+    return this.ensurePixelStreamAssignment(savedUser);
   }
 
   async refreshToken(refreshToken: string) {
@@ -257,7 +270,7 @@ export class AuthService {
       });
 
       const savedUser = await this.userRepository.save(user);
-      await this.assignStreamForUser(savedUser.id);
+      await this.ensurePixelStreamAssignment(savedUser);
       throw new UnauthorizedException(
         'Your account has been created. An administrator must activate your account before you can log in.',
       );
@@ -270,7 +283,7 @@ export class AuthService {
       );
     }
 
-      const assignedUser = await this.assignStreamForUser(existingUser.id);
+      const assignedUser = await this.ensurePixelStreamAssignment(existingUser);
       
       // Note: Role checking should be done by the calling application (dashboard frontend)
       // This endpoint is used by both the dashboard and the Python project,
@@ -431,8 +444,8 @@ export class AuthService {
       throw new UnauthorizedException('Direct login only available for administrators and managers');
     }
 
-    const assignedUser = await this.assignStreamForUser(user.id);
-    
+    const assignedUser = await this.ensurePixelStreamAssignment(user);
+
     // Update last login
     await this.userRepository.update(user.id, { lastLoginAt: new Date() });
     
@@ -583,6 +596,7 @@ export class AuthService {
         relations: ['wallets'],
       });
       if (!user || !user.isActive) return { valid: false };
+      await this.ensurePixelStreamAssignment(user);
       return {
         valid: true,
         user: {
@@ -609,6 +623,7 @@ export class AuthService {
         relations: ['wallets'],
       });
       if (!user || !user.isActive) return { valid: false };
+      await this.ensurePixelStreamAssignment(user);
       return {
         valid: true,
         user: {

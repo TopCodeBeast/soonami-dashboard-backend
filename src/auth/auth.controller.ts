@@ -29,6 +29,15 @@ export class AuthController {
     private tokenService: TokenService,
   ) {}
 
+  private buildFrontendService(req: any): string | null {
+    const baseService = req.headers['x-frontend-service'] || req.headers['frontend-service'] || null;
+    const slot = req.headers['x-pixel-stream-slot'];
+    if (baseService && slot) {
+      return `${baseService}|slot:${slot}`;
+    }
+    return baseService;
+  }
+
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'User login' })
@@ -87,7 +96,7 @@ export class AuthController {
   @ApiResponse({ status: 400, description: 'Name required for first-time registration' })
   @ApiResponse({ status: 409, description: 'Another session is already logged in' })
   async verifyCode(@Body() verifyCodeDto: VerifyCodeDto, @Request() req: any) {
-    const frontendService = req.headers['x-frontend-service'] || req.headers['frontend-service'] || null;
+    const frontendService = this.buildFrontendService(req);
     return this.authService.verifyCode(verifyCodeDto, frontendService);
   }
 
@@ -122,7 +131,7 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Login successful' })
   @ApiResponse({ status: 401, description: 'User not found, deactivated, or not admin/manager' })
   async directLogin(@Body() directLoginDto: DirectLoginDto, @Request() req: any) {
-    const frontendService = req.headers['x-frontend-service'] || req.headers['frontend-service'] || null;
+    const frontendService = this.buildFrontendService(req);
     return this.authService.directLoginForAdmin(directLoginDto.email, frontendService);
   }
 
@@ -147,7 +156,7 @@ export class AuthController {
   async updateActivity(@Request() req: any) {
     const authHeader = req.headers.authorization;
     const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
-    const frontendService = req.headers['x-frontend-service'] || req.headers['frontend-service'];
+    const frontendService = this.buildFrontendService(req);
     return this.authService.updateActivity(token, frontendService);
   }
 
@@ -160,7 +169,7 @@ export class AuthController {
   async expireInactivity(@Request() req: any) {
     const authHeader = req.headers.authorization;
     const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
-    const frontendService = req.headers['x-frontend-service'] || req.headers['frontend-service'];
+    const frontendService = this.buildFrontendService(req);
     return this.authService.expireTokenDueToInactivity(token, frontendService);
   }
 
@@ -228,5 +237,28 @@ export class AuthController {
     }
     await this.tokenService.deleteById(id);
     return { deleted: true, id };
+  }
+
+  /** Manager/Admin only: migrate existing python frontend tokens to include slot metadata */
+  @Post('tokens/migrate-frontend-slots')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Backfill slot metadata for existing frontend tokens (Manager/Admin only)' })
+  @ApiResponse({ status: 200, description: 'Migration executed successfully' })
+  @ApiResponse({ status: 403, description: 'Forbidden - Manager/Admin only' })
+  async migrateFrontendSlots(
+    @Body() body: { targetFrontend?: string; slotCount?: number; dryRun?: boolean },
+    @Request() req: any,
+  ) {
+    if (req.user?.role !== 'manager' && req.user?.role !== 'admin') {
+      throw new ForbiddenException('Only manager/admin can run token slot migration');
+    }
+
+    const targetFrontend = body?.targetFrontend || 'python-ai-frontend';
+    const slotCount = Number(body?.slotCount || 3);
+    const dryRun = Boolean(body?.dryRun);
+
+    return this.tokenService.migrateExistingFrontendSlots(targetFrontend, slotCount, dryRun);
   }
 }

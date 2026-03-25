@@ -5,17 +5,17 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan, MoreThanOrEqual, LessThan, QueryFailedError } from 'typeorm';
+import { Repository, MoreThan, MoreThanOrEqual, LessThan } from 'typeorm';
 import { User, UserRole } from './entities/user.entity';
 import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 import { RoleHierarchy } from './utils/role-hierarchy';
 import { ManagerWhitelist } from './utils/manager-whitelist';
 import { GemTransactionsService } from './gem-transactions.service';
 import { GemTransactionType } from './entities/gem-transaction.entity';
+import { getPixelStreamConfig } from './utils/pixel-stream-assignment';
 // Wallet import - table may not exist, queries are wrapped in try-catch
 import { Wallet } from '../wallets/entities/wallet.entity';
 import { GemTransaction } from './entities/gem-transaction.entity';
-import { getNextAvailableStreamAssignment } from './utils/stream-assignment';
 
 @Injectable()
 export class UsersService {
@@ -29,46 +29,78 @@ export class UsersService {
     private readonly gemTransactionsService: GemTransactionsService,
   ) {}
 
-  private async assignStreamForUser(userId: string): Promise<User> {
-    const maxAttempts = 5;
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const current = await this.userRepository.findOne({ where: { id: userId } });
-      if (!current) {
-        throw new NotFoundException('User not found');
-      }
-
-      if (current.socketPort && current.pixelStreamUrl) {
-        return current;
-      }
-
-      const users = await this.userRepository.find({
-        select: ['id', 'socketPort', 'pixelStreamUrl'],
-      });
-      const assignment = getNextAvailableStreamAssignment(users);
-
-      try {
-        await this.userRepository.update(userId, assignment);
-        const updated = await this.userRepository.findOne({ where: { id: userId } });
-        if (!updated) {
-          throw new NotFoundException('User not found after stream assignment');
-        }
-        return updated;
-      } catch (error) {
-        if (
-          error instanceof QueryFailedError &&
-          (error as any).driverError?.code === '23505' &&
-          attempt < maxAttempts
-        ) {
-          continue;
-        }
-        throw error;
-      }
+  private async ensurePixelStreamAssignment(user: User): Promise<User> {
+    const needsSocketPort = user.socketPort == null;
+    const needsPixelStreamUrl = !user.pixelStreamUrl;
+    if (!needsSocketPort && !needsPixelStreamUrl) {
+      return user;
     }
 
-    throw new ConflictException(
-      'Failed to assign unique socket port and pixel stream URL to user',
-    );
+    const { ports, urls } = getPixelStreamConfig();
+    if (ports.length === 0 || urls.length === 0) {
+      return user;
+    }
+
+    const usedRows = await this.userRepository
+      .createQueryBuilder('user')
+      .select('user.socketPort', 'socketPort')
+      .where('user.socketPort IS NOT NULL')
+      .andWhere('user.id != :id', { id: user.id })
+      .getRawMany<{ socketPort: string | number }>();
+
+    const usedPorts = new Set(usedRows.map((row) => Number(row.socketPort)).filter((value) => Number.isFinite(value)));
+
+    const resolvedSocketPort =
+      user.socketPort != null ? user.socketPort : ports.find((port) => !usedPorts.has(port)) ?? null;
+
+    if (resolvedSocketPort == null) {
+      // No free unique socket port available in configured pool.
+      return user;
+    }
+
+    const configuredIndex = ports.indexOf(resolvedSocketPort);
+    const resolvedPixelStreamUrl =
+      user.pixelStreamUrl && user.pixelStreamUrl.trim().length > 0
+        ? user.pixelStreamUrl
+        : configuredIndex >= 0
+          ? urls[configuredIndex]
+          : urls[0];
+
+    const updatedFields: Partial<User> = {};
+    if (needsSocketPort) {
+      updatedFields.socketPort = resolvedSocketPort;
+      user.socketPort = resolvedSocketPort;
+    }
+    if (needsPixelStreamUrl && resolvedPixelStreamUrl) {
+      updatedFields.pixelStreamUrl = resolvedPixelStreamUrl;
+      user.pixelStreamUrl = resolvedPixelStreamUrl;
+    }
+
+    if (Object.keys(updatedFields).length > 0) {
+      try {
+        await this.userRepository.update(user.id, updatedFields);
+      } catch (error: any) {
+        // Another request may have consumed the same free port concurrently.
+        if (error?.code !== '23505') {
+          throw error;
+        }
+      }
+    }
+    return user;
+  }
+
+  private mapDatabaseError(error: any): never {
+    if (error?.code === '23505') {
+      const detail = String(error?.detail || '');
+      if (detail.includes('socketPort')) {
+        throw new ConflictException('Socket port is already assigned to another user');
+      }
+      if (detail.includes('email')) {
+        throw new ConflictException('Email already exists');
+      }
+      throw new ConflictException('Duplicate value violates a unique constraint');
+    }
+    throw error;
   }
 
   async create(createUserDto: CreateUserDto, currentUserRole: UserRole, currentUserEmail: string) {
@@ -99,8 +131,14 @@ export class UsersService {
       ...createUserDto,
     });
 
-    const savedUser = await this.userRepository.save(user);
-    return this.assignStreamForUser(savedUser.id);
+    let savedUser: User;
+    try {
+      savedUser = await this.userRepository.save(user);
+    } catch (error: any) {
+      this.mapDatabaseError(error);
+    }
+    await this.ensurePixelStreamAssignment(savedUser);
+    return savedUser;
   }
 
   async findAll(currentUserRole: UserRole) {
@@ -111,11 +149,27 @@ export class UsersService {
 
     const users = await this.userRepository.find({
       relations: ['wallets'],
-      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt', 'gem', 'socketPort', 'pixelStreamUrl'],
+      select: [
+        'id',
+        'name',
+        'email',
+        'role',
+        'isActive',
+        'lastLoginAt',
+        'createdAt',
+        'updatedAt',
+        'gem',
+        'socketPort',
+        'pixelStreamUrl',
+      ],
     });
     
+    const usersWithAssignments = await Promise.all(
+      users.map(async (user) => this.ensurePixelStreamAssignment(user)),
+    );
+
     // Return users with wallets (or empty array if none)
-    return users.map(user => ({
+    return usersWithAssignments.map(user => ({
       ...user,
       wallets: user.wallets || [],
     }));
@@ -130,12 +184,25 @@ export class UsersService {
     const user = await this.userRepository.findOne({
       where: { id },
       relations: ['wallets'],
-      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt', 'gem', 'socketPort', 'pixelStreamUrl'],
+      select: [
+        'id',
+        'name',
+        'email',
+        'role',
+        'isActive',
+        'lastLoginAt',
+        'createdAt',
+        'updatedAt',
+        'gem',
+        'socketPort',
+        'pixelStreamUrl',
+      ],
     });
 
     if (!user) {
       throw new NotFoundException('User not found');
     }
+    await this.ensurePixelStreamAssignment(user);
 
     // Return user with wallets (or empty array if none)
     return {
@@ -147,21 +214,33 @@ export class UsersService {
   async findByEmail(email: string) {
     return this.userRepository.findOne({
       where: { email },
-      select: ['id', 'name', 'email', 'role', 'isActive', 'lastLoginAt', 'createdAt', 'updatedAt', 'gem', 'socketPort', 'pixelStreamUrl'],
+      select: [
+        'id',
+        'name',
+        'email',
+        'role',
+        'isActive',
+        'lastLoginAt',
+        'createdAt',
+        'updatedAt',
+        'gem',
+        'socketPort',
+        'pixelStreamUrl',
+      ],
     });
   }
 
   async getGameSave(userId: string): Promise<string | null> {
     const user = await this.userRepository.findOne({
       where: { id: userId },
-      select: ['id', 'gameSaveData'],
+      select: ['id', 'gameSaveFile'],
     });
 
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    return user.gameSaveData ?? null;
+    return user.gameSaveFile ?? null;
   }
 
   async saveGameSave(userId: string, saveData: string): Promise<void> {
@@ -174,7 +253,7 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    await this.userRepository.update(userId, { gameSaveData: saveData });
+    await this.userRepository.update(userId, { gameSaveFile: saveData });
   }
 
   async update(
@@ -246,7 +325,11 @@ export class UsersService {
     // Extract transaction fields before updating user (they're not part of User entity)
     const { gemTransactionReason, gemTransactionMetadata, ...userUpdateData } = updateUserDto;
     
-    await this.userRepository.update(id, userUpdateData);
+    try {
+      await this.userRepository.update(id, userUpdateData);
+    } catch (error: any) {
+      this.mapDatabaseError(error);
+    }
 
     if (gemChange && gemChange !== 0) {
       // Reload user to get updated gem value
@@ -307,6 +390,8 @@ export class UsersService {
         'gem',
         'role',
         'isActive',
+        'socketPort',
+        'pixelStreamUrl',
         'lastLoginAt',
         'stampsCollected',
         'lastStampClaimDate',
@@ -328,6 +413,7 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
+    await this.ensurePixelStreamAssignment(user);
 
     console.log(`✅ Profile fetched for user ${currentUserId} with ${user.stampsCollected || 0} stamps`);
     
@@ -342,6 +428,8 @@ export class UsersService {
         'gem',
         'role',
         'isActive',
+        'socketPort',
+        'pixelStreamUrl',
         'lastLoginAt',
         'stampsCollected',
         'lastStampClaimDate',
@@ -363,6 +451,7 @@ export class UsersService {
     if (!userWithWallets) {
       throw new NotFoundException('User not found');
     }
+    await this.ensurePixelStreamAssignment(userWithWallets);
 
     // Return user with wallets and stability signal fields
     return {
@@ -372,6 +461,8 @@ export class UsersService {
       gem: userWithWallets.gem,
       role: userWithWallets.role,
       isActive: userWithWallets.isActive,
+      socketPort: userWithWallets.socketPort,
+      pixelStreamUrl: userWithWallets.pixelStreamUrl,
       lastLoginAt: userWithWallets.lastLoginAt,
       stampsCollected: userWithWallets.stampsCollected,
       lastStampClaimDate: userWithWallets.lastStampClaimDate,
@@ -383,11 +474,44 @@ export class UsersService {
       stabilitySignalS: userWithWallets.stabilitySignalS ?? 0,
       stabilitySignalM: userWithWallets.stabilitySignalM ?? 0,
       stabilitySignalL: userWithWallets.stabilitySignalL ?? 0,
-      socketPort: userWithWallets.socketPort,
-      pixelStreamUrl: userWithWallets.pixelStreamUrl,
       createdAt: userWithWallets.createdAt,
       updatedAt: userWithWallets.updatedAt,
       wallets: userWithWallets.wallets || [],
+    };
+  }
+
+  async getGameSaveFile(currentUserId: string) {
+    const user = await this.userRepository.findOne({
+      where: { id: currentUserId },
+      select: ['id', 'gameSaveFile'],
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return {
+      jsonString: user.gameSaveFile || '',
+    };
+  }
+
+  async updateGameSaveFile(currentUserId: string, jsonString: string) {
+    const user = await this.userRepository.findOne({
+      where: { id: currentUserId },
+      select: ['id'],
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    await this.userRepository.update(currentUserId, {
+      gameSaveFile: jsonString || '',
+    });
+
+    return {
+      success: true,
+      updated: true,
     };
   }
 

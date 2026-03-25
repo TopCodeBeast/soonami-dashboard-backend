@@ -35,6 +35,20 @@ export class CreateUserDto {
   @IsOptional()
   isActive?: boolean;
 
+  @ApiProperty({ example: 7001, required: false, description: 'Dedicated socket port for the user stream' })
+  @IsOptional()
+  @IsNumber()
+  socketPort?: number;
+
+  @ApiProperty({
+    example: 'https://stream.example.com/uiless.html?AutoPlayVideo=true',
+    required: false,
+    description: 'Pixel stream URL assigned to this user',
+  })
+  @IsOptional()
+  @IsString()
+  pixelStreamUrl?: string;
+
   @ApiProperty({
     example: 'Gem purchase checkout',
     required: false,
@@ -79,6 +93,20 @@ export class UpdateUserDto {
   @IsBoolean()
   @IsOptional()
   isActive?: boolean;
+
+  @ApiProperty({ example: 7001, required: false, description: 'Dedicated socket port for the user stream' })
+  @IsOptional()
+  @IsNumber()
+  socketPort?: number;
+
+  @ApiProperty({
+    example: 'https://stream.example.com/uiless.html?AutoPlayVideo=true',
+    required: false,
+    description: 'Pixel stream URL assigned to this user',
+  })
+  @IsOptional()
+  @IsString()
+  pixelStreamUrl?: string;
 
   @ApiProperty({
     example: 'Store purchase: Premium Boost',
@@ -153,6 +181,12 @@ export class UserResponseDto {
   @ApiProperty()
   isActive: boolean;
 
+  @ApiProperty({ required: false })
+  socketPort?: number;
+
+  @ApiProperty({ required: false })
+  pixelStreamUrl?: string;
+
   @ApiProperty()
   lastLoginAt: Date;
 
@@ -161,12 +195,6 @@ export class UserResponseDto {
 
   @ApiProperty()
   updatedAt: Date;
-
-  @ApiProperty({ required: false, description: 'Assigned dedicated socket port' })
-  socketPort?: number;
-
-  @ApiProperty({ required: false, description: 'Assigned dedicated Pixel Streaming URL' })
-  pixelStreamUrl?: string;
 
   @ApiProperty()
   wallets: any[];
