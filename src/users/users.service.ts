@@ -103,6 +103,63 @@ export class UsersService {
     throw error;
   }
 
+  private async skipDuplicateManualStreamFields<
+    T extends { socketPort?: number; pixelStreamUrl?: string }
+  >(
+    payload: T,
+    excludeUserId?: string,
+  ): Promise<T> {
+    const sanitized = { ...payload };
+
+    const hasSocketPort =
+      Object.prototype.hasOwnProperty.call(payload, 'socketPort') &&
+      typeof payload.socketPort === 'number' &&
+      Number.isFinite(payload.socketPort);
+    if (hasSocketPort) {
+      const portDuplicateQuery = this.userRepository
+        .createQueryBuilder('user')
+        .select('user.id', 'id')
+        .where('user.socketPort = :socketPort', { socketPort: payload.socketPort });
+      if (excludeUserId) {
+        portDuplicateQuery.andWhere('user.id != :excludeUserId', { excludeUserId });
+      }
+      const duplicatePortOwner = await portDuplicateQuery.getRawOne<{ id: string }>();
+
+      if (duplicatePortOwner) {
+        delete sanitized.socketPort;
+      }
+    }
+
+    const hasPixelStreamUrl =
+      Object.prototype.hasOwnProperty.call(payload, 'pixelStreamUrl') &&
+      typeof payload.pixelStreamUrl === 'string';
+    if (hasPixelStreamUrl) {
+      const normalizedPixelStreamUrl = payload.pixelStreamUrl!.trim();
+      if (normalizedPixelStreamUrl.length === 0) {
+        delete sanitized.pixelStreamUrl;
+      } else {
+        const urlDuplicateQuery = this.userRepository
+          .createQueryBuilder('user')
+          .select('user.id', 'id')
+          .where('user.pixelStreamUrl = :pixelStreamUrl', {
+            pixelStreamUrl: normalizedPixelStreamUrl,
+          });
+        if (excludeUserId) {
+          urlDuplicateQuery.andWhere('user.id != :excludeUserId', { excludeUserId });
+        }
+        const duplicateUrlOwner = await urlDuplicateQuery.getRawOne<{ id: string }>();
+
+        if (duplicateUrlOwner) {
+          delete sanitized.pixelStreamUrl;
+        } else {
+          sanitized.pixelStreamUrl = normalizedPixelStreamUrl as T['pixelStreamUrl'];
+        }
+      }
+    }
+
+    return sanitized;
+  }
+
   async create(createUserDto: CreateUserDto, currentUserRole: UserRole, currentUserEmail: string) {
     // Only managers and admins can create users
     if (!RoleHierarchy.canAccessAdminFeatures(currentUserRole)) {
@@ -127,8 +184,9 @@ export class UsersService {
       throw new ConflictException('Email already exists');
     }
 
+    const createPayload = await this.skipDuplicateManualStreamFields(createUserDto);
     const user = this.userRepository.create({
-      ...createUserDto,
+      ...createPayload,
     });
 
     let savedUser: User;
@@ -325,7 +383,8 @@ export class UsersService {
     }
 
     // Extract transaction fields before updating user (they're not part of User entity)
-    const { gemTransactionReason, gemTransactionMetadata, ...userUpdateData } = updateUserDto;
+    const { gemTransactionReason, gemTransactionMetadata, ...userUpdateDataRaw } = updateUserDto;
+    const userUpdateData = await this.skipDuplicateManualStreamFields(userUpdateDataRaw, id);
     
     try {
       await this.userRepository.update(id, userUpdateData);
