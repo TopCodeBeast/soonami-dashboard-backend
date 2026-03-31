@@ -71,31 +71,23 @@ export class UsersService {
     throw error;
   }
 
-  private async skipDuplicateManualStreamFields<
+  private async sanitizeManualStreamFields<
     T extends { socketPort?: number; pixelStreamUrl?: string }
   >(
     payload: T,
-    excludeUserId?: string,
   ): Promise<T> {
     const sanitized = { ...payload };
 
     const hasSocketPort =
       Object.prototype.hasOwnProperty.call(payload, 'socketPort') &&
       typeof payload.socketPort === 'number' &&
-      Number.isFinite(payload.socketPort);
+      Number.isInteger(payload.socketPort) &&
+      payload.socketPort > 0 &&
+      payload.socketPort <= 65535;
     if (hasSocketPort) {
-      const portDuplicateQuery = this.userRepository
-        .createQueryBuilder('user')
-        .select('user.id', 'id')
-        .where('user.socketPort = :socketPort', { socketPort: payload.socketPort });
-      if (excludeUserId) {
-        portDuplicateQuery.andWhere('user.id != :excludeUserId', { excludeUserId });
-      }
-      const duplicatePortOwner = await portDuplicateQuery.getRawOne<{ id: string }>();
-
-      if (duplicatePortOwner) {
-        delete sanitized.socketPort;
-      }
+      sanitized.socketPort = payload.socketPort;
+    } else if (Object.prototype.hasOwnProperty.call(payload, 'socketPort')) {
+      delete sanitized.socketPort;
     }
 
     const hasPixelStreamUrl =
@@ -106,22 +98,7 @@ export class UsersService {
       if (normalizedPixelStreamUrl.length === 0) {
         delete sanitized.pixelStreamUrl;
       } else {
-        const urlDuplicateQuery = this.userRepository
-          .createQueryBuilder('user')
-          .select('user.id', 'id')
-          .where('user.pixelStreamUrl = :pixelStreamUrl', {
-            pixelStreamUrl: normalizedPixelStreamUrl,
-          });
-        if (excludeUserId) {
-          urlDuplicateQuery.andWhere('user.id != :excludeUserId', { excludeUserId });
-        }
-        const duplicateUrlOwner = await urlDuplicateQuery.getRawOne<{ id: string }>();
-
-        if (duplicateUrlOwner) {
-          delete sanitized.pixelStreamUrl;
-        } else {
-          sanitized.pixelStreamUrl = normalizedPixelStreamUrl as T['pixelStreamUrl'];
-        }
+        sanitized.pixelStreamUrl = normalizedPixelStreamUrl as T['pixelStreamUrl'];
       }
     }
 
@@ -152,7 +129,7 @@ export class UsersService {
       throw new ConflictException('Email already exists');
     }
 
-    const createPayload = await this.skipDuplicateManualStreamFields(createUserDto);
+    const createPayload = await this.sanitizeManualStreamFields(createUserDto);
     const user = this.userRepository.create({
       ...createPayload,
     });
@@ -352,7 +329,7 @@ export class UsersService {
 
     // Extract transaction fields before updating user (they're not part of User entity)
     const { gemTransactionReason, gemTransactionMetadata, ...userUpdateDataRaw } = updateUserDto;
-    const userUpdateData = await this.skipDuplicateManualStreamFields(userUpdateDataRaw, id);
+    const userUpdateData = await this.sanitizeManualStreamFields(userUpdateDataRaw);
     
     try {
       await this.userRepository.update(id, userUpdateData);
