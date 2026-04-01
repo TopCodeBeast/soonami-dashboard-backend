@@ -273,4 +273,36 @@ export class AuthController {
 
     return this.tokenService.migrateExistingFrontendSlots(targetFrontend, slotCount, dryRun);
   }
+
+  @Get('stream-instances')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List stream instances (Manager/Admin only)' })
+  @ApiResponse({ status: 200, description: 'List of stream instances' })
+  @ApiResponse({ status: 403, description: 'Forbidden - Manager/Admin only' })
+  async listStreamInstances(@Request() req: any) {
+    if (req.user?.role !== 'manager' && req.user?.role !== 'admin') {
+      throw new ForbiddenException('Only manager/admin can list stream instances');
+    }
+    return this.authService.listStreamInstances();
+  }
+
+  @Patch('stream-instances/:id')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Update stream instance user email (Manager/Admin only)' })
+  @ApiResponse({ status: 200, description: 'Stream instance updated' })
+  @ApiResponse({ status: 403, description: 'Forbidden - Manager/Admin only' })
+  @ApiResponse({ status: 400, description: 'Invalid stream instance or user email' })
+  async updateStreamInstanceUserEmail(
+    @Param('id') id: string,
+    @Body() body: { userEmail?: string | null },
+    @Request() req: any,
+  ) {
+    if (req.user?.role !== 'manager' && req.user?.role !== 'admin') {
+      throw new ForbiddenException('Only manager/admin can update stream instances');
+    }
+    return this.authService.updateStreamInstanceUserEmail(id, body?.userEmail ?? null);
+  }
 }

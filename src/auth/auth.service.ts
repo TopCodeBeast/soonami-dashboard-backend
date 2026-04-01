@@ -139,6 +139,22 @@ export class AuthService {
     return user;
   }
 
+  private async resolveStreamAssignmentForFrontend(
+    user: User,
+    frontendService?: string | null,
+  ): Promise<User> {
+    const isDashboardFrontend = frontendService === DASHBOARD_FRONTEND;
+    if (isDashboardFrontend) {
+      // Dashboard sessions should never reserve gameplay stream slots.
+      await this.clearUserStreamAssignment(user.id, user.email);
+      user.socketPort = null;
+      user.pixelStreamUrl = null;
+      return user;
+    }
+
+    return this.ensurePixelStreamAssignment(user);
+  }
+
   private async clearUserStreamAssignment(
     userId?: string | null,
     userEmail?: string | null,
@@ -180,6 +196,105 @@ export class AuthService {
           .where('LOWER(email) = :userEmail', { userEmail: normalizedEmail })
           .execute();
       }
+    });
+  }
+
+  async listStreamInstances() {
+    const instances = await this.streamInstanceRepository.find({
+      order: { socketPort: 'ASC' },
+    });
+
+    return instances.map((instance) => ({
+      id: instance.id,
+      socketPort: instance.socketPort,
+      pixelStreamUrl: instance.pixelStreamUrl,
+      userId: instance.userId,
+      userEmail: instance.userEmail,
+      createdAt: instance.createdAt,
+      updatedAt: instance.updatedAt,
+    }));
+  }
+
+  async updateStreamInstanceUserEmail(
+    instanceId: string,
+    userEmail?: string | null,
+  ) {
+    const normalizedEmail = userEmail?.trim().toLowerCase() || null;
+
+    return this.dataSource.transaction(async (manager) => {
+      const instanceRepo = manager.getRepository(StreamInstance);
+      const userRepo = manager.getRepository(User);
+
+      const instance = await instanceRepo.findOne({ where: { id: instanceId } });
+      if (!instance) {
+        throw new BadRequestException('Stream instance not found');
+      }
+
+      if (!normalizedEmail) {
+        if (instance.userId) {
+          await userRepo.update(instance.userId, {
+            socketPort: null,
+            pixelStreamUrl: null,
+          });
+        }
+
+        await instanceRepo.update(instance.id, {
+          userId: null,
+          userEmail: null,
+        });
+      } else {
+        const targetUser = await userRepo
+          .createQueryBuilder('user')
+          .where('LOWER(user.email) = :email', { email: normalizedEmail })
+          .getOne();
+
+        if (!targetUser) {
+          throw new BadRequestException('No user found for this email');
+        }
+
+        if (instance.userId && instance.userId !== targetUser.id) {
+          await userRepo.update(instance.userId, {
+            socketPort: null,
+            pixelStreamUrl: null,
+          });
+        }
+
+        await instanceRepo
+          .createQueryBuilder()
+          .update(StreamInstance)
+          .set({ userId: null, userEmail: null })
+          .where('"userId" = :userId', { userId: targetUser.id })
+          .andWhere('id != :instanceId', { instanceId: instance.id })
+          .execute();
+
+        await instanceRepo.update(instance.id, {
+          userId: targetUser.id,
+          userEmail: targetUser.email,
+        });
+
+        await userRepo.update(targetUser.id, {
+          socketPort: instance.socketPort,
+          pixelStreamUrl: instance.pixelStreamUrl,
+        });
+      }
+
+      const updatedInstance = await instanceRepo.findOne({
+        where: { id: instance.id },
+      });
+
+      if (!updatedInstance) {
+        throw new BadRequestException('Stream instance not found after update');
+      }
+
+      return {
+        id: updatedInstance.id,
+        socketPort: updatedInstance.socketPort,
+        pixelStreamUrl: updatedInstance.pixelStreamUrl,
+        userId: updatedInstance.userId,
+        userEmail: updatedInstance.userEmail,
+        createdAt: updatedInstance.createdAt,
+        updatedAt: updatedInstance.updatedAt,
+      };
     });
   }
 
@@ -375,7 +490,10 @@ export class AuthService {
       );
     }
 
-      const assignedUser = await this.ensurePixelStreamAssignment(existingUser);
+      const assignedUser = await this.resolveStreamAssignmentForFrontend(
+        existingUser,
+        frontendService,
+      );
       
       // Note: Role checking should be done by the calling application (dashboard frontend)
       // This endpoint is used by both the dashboard and the Python project,
@@ -536,7 +654,10 @@ export class AuthService {
       throw new UnauthorizedException('Direct login only available for administrators and managers');
     }
 
-    const assignedUser = await this.ensurePixelStreamAssignment(user);
+    const assignedUser = await this.resolveStreamAssignmentForFrontend(
+      user,
+      frontendService,
+    );
 
     // Update last login
     await this.userRepository.update(user.id, { lastLoginAt: new Date() });
