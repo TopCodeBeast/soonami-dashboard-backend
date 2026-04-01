@@ -12,6 +12,22 @@ export interface UserStreamState {
   pixelStreamUrl: string | null;
 }
 
+const DEFAULT_MAX_STREAM_INSTANCES = 3;
+
+function getMaxStreamInstances(): number {
+  const rawValue = process.env.PIXEL_STREAM_MAX_INSTANCES;
+  if (!rawValue || !rawValue.trim()) {
+    return DEFAULT_MAX_STREAM_INSTANCES;
+  }
+
+  const parsed = Number.parseInt(rawValue, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_MAX_STREAM_INSTANCES;
+  }
+
+  return parsed;
+}
+
 function readPoolFileLines(fileName: string): string[] {
   const candidates = [
     resolve(process.cwd(), 'streaming', fileName),
@@ -51,7 +67,7 @@ export function loadStreamAssignmentPool(): StreamAssignment[] {
     );
   }
 
-  return portLines.map((portValue, index) => {
+  const completePool = portLines.map((portValue, index) => {
     const parsedPort = Number.parseInt(portValue, 10);
     if (!Number.isFinite(parsedPort) || parsedPort <= 0) {
       throw new Error(`Invalid socket port value: "${portValue}"`);
@@ -67,6 +83,9 @@ export function loadStreamAssignmentPool(): StreamAssignment[] {
       pixelStreamUrl,
     };
   });
+
+  const maxInstances = getMaxStreamInstances();
+  return completePool.slice(0, maxInstances);
 }
 
 export function getNextAvailableStreamAssignment(

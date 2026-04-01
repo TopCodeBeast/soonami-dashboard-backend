@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User, UserRole } from '../users/entities/user.entity';
 import { LoginDto, RegisterDto, ChangePasswordDto, RequestCodeDto, VerifyCodeDto, RevokeAllSessionsDto, CheckUserDto, CheckTokenDto } from './dto/auth.dto';
@@ -15,7 +15,8 @@ import { CodeStorageService } from './services/code-storage.service';
 import { TokenService } from './services/token.service';
 import { StampsService } from '../stamps/stamps.service';
 import { validateName } from './utils/name-validator';
-import { getAssignmentForUser } from '../users/utils/pixel-stream-assignment';
+import { loadStreamAssignmentPool } from '../users/utils/stream-assignment';
+import { StreamInstance } from './entities/stream-instance.entity';
 
 /** soonami-dashboard-frontend: no token in DB, no expiry; login with JWT only */
 const DASHBOARD_FRONTEND = 'soonami-dashboard-frontend';
@@ -25,39 +26,161 @@ export class AuthService {
   constructor(
     @InjectRepository(User)
     private userRepository: Repository<User>,
+    @InjectRepository(StreamInstance)
+    private streamInstanceRepository: Repository<StreamInstance>,
     private jwtService: JwtService,
     private emailService: EmailService,
     private codeStorageService: CodeStorageService,
     private tokenService: TokenService,
     private stampsService: StampsService,
+    private dataSource: DataSource,
   ) {}
 
+  private async ensureStreamInstancePool(): Promise<void> {
+    const pool = loadStreamAssignmentPool();
+    if (pool.length === 0) {
+      return;
+    }
+
+    const existingInstances = await this.streamInstanceRepository.find({
+      select: ['id', 'socketPort', 'pixelStreamUrl', 'userId', 'userEmail'],
+    });
+    const existingByPort = new Map(
+      existingInstances.map((instance) => [instance.socketPort, instance]),
+    );
+
+    for (const entry of pool) {
+      const existing = existingByPort.get(entry.socketPort);
+      if (!existing) {
+        await this.streamInstanceRepository.insert({
+          socketPort: entry.socketPort,
+          pixelStreamUrl: entry.pixelStreamUrl,
+          userId: null,
+          userEmail: null,
+        });
+        continue;
+      }
+
+      if (
+        existing.userId == null &&
+        existing.pixelStreamUrl !== entry.pixelStreamUrl
+      ) {
+        await this.streamInstanceRepository.update(existing.id, {
+          pixelStreamUrl: entry.pixelStreamUrl,
+        });
+      }
+    }
+  }
+
   private async ensurePixelStreamAssignment(user: User): Promise<User> {
-    const needsSocketPort = user.socketPort == null;
-    const needsPixelStreamUrl = !user.pixelStreamUrl;
-    if (!needsSocketPort && !needsPixelStreamUrl) {
-      return user;
+    await this.ensureStreamInstancePool();
+
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const instanceRepo = queryRunner.manager.getRepository(StreamInstance);
+      const userRepo = queryRunner.manager.getRepository(User);
+
+      let instance = await instanceRepo
+        .createQueryBuilder('instance')
+        .setLock('pessimistic_write')
+        .where('instance.userId = :userId', { userId: user.id })
+        .getOne();
+
+      if (!instance) {
+        instance = await instanceRepo
+          .createQueryBuilder('instance')
+          .setLock('pessimistic_write')
+          .where('instance.userId IS NULL')
+          .orderBy('instance.socketPort', 'ASC')
+          .getOne();
+
+        if (!instance) {
+          throw new ConflictException(
+            'No available stream instances. Please try again later.',
+          );
+        }
+
+        await instanceRepo.update(instance.id, {
+          userId: user.id,
+          userEmail: user.email,
+        });
+      } else if (instance.userEmail !== user.email) {
+        await instanceRepo.update(instance.id, {
+          userEmail: user.email,
+        });
+      }
+
+      const updatedFields: Partial<User> = {};
+      if (user.socketPort !== instance.socketPort) {
+        updatedFields.socketPort = instance.socketPort;
+      }
+      if (user.pixelStreamUrl !== instance.pixelStreamUrl) {
+        updatedFields.pixelStreamUrl = instance.pixelStreamUrl;
+      }
+
+      if (Object.keys(updatedFields).length > 0) {
+        await userRepo.update(user.id, updatedFields);
+      }
+
+      user.socketPort = instance.socketPort;
+      user.pixelStreamUrl = instance.pixelStreamUrl;
+
+      await queryRunner.commitTransaction();
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
     }
 
-    const fallbackAssignment = getAssignmentForUser(user.id);
-    if (fallbackAssignment.socketPort == null && !fallbackAssignment.pixelStreamUrl) {
-      return user;
-    }
-
-    const updatedFields: Partial<User> = {};
-    if (needsSocketPort && fallbackAssignment.socketPort != null) {
-      updatedFields.socketPort = fallbackAssignment.socketPort;
-      user.socketPort = fallbackAssignment.socketPort;
-    }
-    if (needsPixelStreamUrl && fallbackAssignment.pixelStreamUrl) {
-      updatedFields.pixelStreamUrl = fallbackAssignment.pixelStreamUrl;
-      user.pixelStreamUrl = fallbackAssignment.pixelStreamUrl;
-    }
-
-    if (Object.keys(updatedFields).length > 0) {
-      await this.userRepository.update(user.id, updatedFields);
-    }
     return user;
+  }
+
+  private async clearUserStreamAssignment(
+    userId?: string | null,
+    userEmail?: string | null,
+  ): Promise<void> {
+    const normalizedEmail = userEmail?.toLowerCase().trim() || null;
+    await this.dataSource.transaction(async (manager) => {
+      const streamInstanceRepo = manager.getRepository(StreamInstance);
+      const userRepo = manager.getRepository(User);
+
+      if (userId && normalizedEmail) {
+        await streamInstanceRepo
+          .createQueryBuilder()
+          .update(StreamInstance)
+          .set({ userId: null, userEmail: null })
+          .where('"userId" = :userId', { userId })
+          .orWhere('LOWER("userEmail") = :userEmail', { userEmail: normalizedEmail })
+          .execute();
+      } else if (userId) {
+        await streamInstanceRepo.update({ userId }, { userId: null, userEmail: null });
+      } else if (normalizedEmail) {
+        await streamInstanceRepo
+          .createQueryBuilder()
+          .update(StreamInstance)
+          .set({ userId: null, userEmail: null })
+          .where('LOWER("userEmail") = :userEmail', { userEmail: normalizedEmail })
+          .execute();
+      }
+
+      if (userId) {
+        await userRepo.update(userId, {
+          socketPort: null,
+          pixelStreamUrl: null,
+        });
+      } else if (normalizedEmail) {
+        await userRepo
+          .createQueryBuilder()
+          .update(User)
+          .set({ socketPort: null, pixelStreamUrl: null })
+          .where('LOWER(email) = :userEmail', { userEmail: normalizedEmail })
+          .execute();
+      }
+    });
   }
 
   async validateUser(email: string, password: string): Promise<any> {
@@ -133,7 +256,7 @@ export class AuthService {
     });
 
     const savedUser = await this.userRepository.save(user);
-    return this.ensurePixelStreamAssignment(savedUser);
+    return savedUser;
   }
 
   async refreshToken(refreshToken: string) {
@@ -240,7 +363,6 @@ export class AuthService {
       });
 
       const savedUser = await this.userRepository.save(user);
-      await this.ensurePixelStreamAssignment(savedUser);
       throw new UnauthorizedException(
         'Your account has been created. An administrator must activate your account before you can log in.',
       );
@@ -493,6 +615,12 @@ export class AuthService {
   async logout(token: string): Promise<{ ok: boolean }> {
     if (token) {
       await this.tokenService.expireToken(token);
+      const decoded = this.jwtService.decode(token) as { sub?: string; email?: string } | null;
+      const userId = decoded?.sub;
+      const userEmail = decoded?.email;
+      if (userId || userEmail) {
+        await this.clearUserStreamAssignment(userId, userEmail);
+      }
     }
     return { ok: true };
   }
@@ -513,6 +641,7 @@ export class AuthService {
     const user = await this.userRepository.findOne({ where: { email } });
     if (user) {
       await this.tokenService.expireAllUserTokensByUsernameAndUserId(email, user.id);
+      await this.clearUserStreamAssignment(user.id, user.email);
     } else {
       await this.tokenService.expireAllUserTokensByUsername(email);
     }
@@ -522,6 +651,15 @@ export class AuthService {
   async updateActivity(token: string, frontendService?: string): Promise<{ ok: boolean }> {
     if (token) {
       await this.tokenService.updateActivity(token, frontendService);
+      const decoded = this.jwtService.decode(token) as { sub?: string; email?: string } | null;
+      const userId = decoded?.sub;
+      const userEmail = decoded?.email?.toLowerCase().trim();
+      if (userId) {
+        await this.streamInstanceRepository.update(
+          { userId },
+          { userEmail: userEmail || null },
+        );
+      }
       if (frontendService) {
         console.log(`✅ Activity updated from frontend: ${frontendService}`);
       }
@@ -539,6 +677,12 @@ export class AuthService {
       }
       
       await this.tokenService.expireToken(token);
+      const decoded = this.jwtService.decode(token) as { sub?: string; email?: string } | null;
+      const userId = decoded?.sub;
+      const userEmail = decoded?.email;
+      if (userId || userEmail) {
+        await this.clearUserStreamAssignment(userId, userEmail);
+      }
       console.log(`✅ Token expired due to inactivity from frontend: ${frontendService || 'unknown'}`);
     }
     return { ok: true };
@@ -566,7 +710,6 @@ export class AuthService {
         relations: ['wallets'],
       });
       if (!user || !user.isActive) return { valid: false };
-      await this.ensurePixelStreamAssignment(user);
       return {
         valid: true,
         user: {
@@ -593,7 +736,6 @@ export class AuthService {
         relations: ['wallets'],
       });
       if (!user || !user.isActive) return { valid: false };
-      await this.ensurePixelStreamAssignment(user);
       return {
         valid: true,
         user: {

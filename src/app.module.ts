@@ -16,6 +16,7 @@ import { StripeCard } from './stripe-payments/entities/stripe-card.entity';
 import { UserItem } from './users/entities/user-item.entity';
 import { StampReward } from './stamps/entities/stamp-reward.entity';
 import { UserToken } from './auth/entities/user-token.entity';
+import { StreamInstance } from './auth/entities/stream-instance.entity';
 
 @Module({
   imports: [
@@ -35,7 +36,7 @@ import { UserToken } from './auth/entities/user-token.entity';
       username: process.env.DB_USERNAME || 'postgres',
       password: process.env.DB_PASSWORD,
       database: process.env.DB_NAME || 'user_management',
-      entities: [User, Wallet, GemTransaction, StripeCard, UserItem, StampReward, UserToken],
+      entities: [User, Wallet, GemTransaction, StripeCard, UserItem, StampReward, UserToken, StreamInstance],
       migrations: ['dist/src/migrations/*.js'],
       migrationsRun: process.env.RUN_MIGRATIONS === 'true', // Set RUN_MIGRATIONS=true to auto-run migrations
       synchronize: false, // Disabled - use migrations instead

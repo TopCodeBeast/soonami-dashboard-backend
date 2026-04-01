@@ -12,11 +12,12 @@ import { TokenCleanupService } from './token-cleanup.service';
 import { TokenValidationGuard } from './token-validation.guard';
 import { User } from '../users/entities/user.entity';
 import { UserToken } from './entities/user-token.entity';
+import { StreamInstance } from './entities/stream-instance.entity';
 import { StampsModule } from '../stamps/stamps.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, UserToken]),
+    TypeOrmModule.forFeature([User, UserToken, StreamInstance]),
     PassportModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET,

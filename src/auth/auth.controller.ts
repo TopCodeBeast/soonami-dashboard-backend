@@ -136,7 +136,7 @@ export class AuthController {
   }
 
   @Post('logout')
-  @UseGuards(JwtAuthGuard, TokenValidationGuard)
+  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Logout user and expire token' })
@@ -145,6 +145,18 @@ export class AuthController {
     const authHeader = req.headers.authorization;
     const token = authHeader?.startsWith('Bearer ') ? authHeader.substring(7) : null;
     return this.authService.logout(token);
+  }
+
+  @Post('logout-beacon')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Best-effort logout endpoint for browser close beacons' })
+  @ApiResponse({ status: 200, description: 'Beacon logout processed' })
+  async logoutBeacon(@Body() body: { token?: string }) {
+    const token = body?.token?.trim();
+    if (token) {
+      await this.authService.logout(token);
+    }
+    return { ok: true };
   }
 
   @Get('activity')

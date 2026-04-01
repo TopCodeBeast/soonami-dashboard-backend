@@ -12,7 +12,6 @@ import { RoleHierarchy } from './utils/role-hierarchy';
 import { ManagerWhitelist } from './utils/manager-whitelist';
 import { GemTransactionsService } from './gem-transactions.service';
 import { GemTransactionType } from './entities/gem-transaction.entity';
-import { getAssignmentForUser } from './utils/pixel-stream-assignment';
 // Wallet import - table may not exist, queries are wrapped in try-catch
 import { Wallet } from '../wallets/entities/wallet.entity';
 import { GemTransaction } from './entities/gem-transaction.entity';
@@ -29,34 +28,6 @@ export class UsersService {
     private readonly gemTransactionsService: GemTransactionsService,
   ) {}
 
-  private async ensurePixelStreamAssignment(user: User): Promise<User> {
-    const needsSocketPort = user.socketPort == null;
-    const needsPixelStreamUrl = !user.pixelStreamUrl;
-    if (!needsSocketPort && !needsPixelStreamUrl) {
-      return user;
-    }
-
-    const fallbackAssignment = getAssignmentForUser(user.id);
-    if (fallbackAssignment.socketPort == null && !fallbackAssignment.pixelStreamUrl) {
-      return user;
-    }
-
-    const updatedFields: Partial<User> = {};
-    if (needsSocketPort && fallbackAssignment.socketPort != null) {
-      updatedFields.socketPort = fallbackAssignment.socketPort;
-      user.socketPort = fallbackAssignment.socketPort;
-    }
-    if (needsPixelStreamUrl && fallbackAssignment.pixelStreamUrl) {
-      updatedFields.pixelStreamUrl = fallbackAssignment.pixelStreamUrl;
-      user.pixelStreamUrl = fallbackAssignment.pixelStreamUrl;
-    }
-
-    if (Object.keys(updatedFields).length > 0) {
-      await this.userRepository.update(user.id, updatedFields);
-    }
-    return user;
-  }
-
   private mapDatabaseError(error: any): never {
     if (error?.code === '23505') {
       const detail = String(error?.detail || '');
@@ -72,33 +43,41 @@ export class UsersService {
   }
 
   private async sanitizeManualStreamFields<
-    T extends { socketPort?: number; pixelStreamUrl?: string }
+    T extends { socketPort?: number | null; pixelStreamUrl?: string | null }
   >(
     payload: T,
   ): Promise<T> {
     const sanitized = { ...payload };
 
-    const hasSocketPort =
-      Object.prototype.hasOwnProperty.call(payload, 'socketPort') &&
-      typeof payload.socketPort === 'number' &&
-      Number.isInteger(payload.socketPort) &&
-      payload.socketPort > 0 &&
-      payload.socketPort <= 65535;
-    if (hasSocketPort) {
-      sanitized.socketPort = payload.socketPort;
-    } else if (Object.prototype.hasOwnProperty.call(payload, 'socketPort')) {
-      delete sanitized.socketPort;
+    if (Object.prototype.hasOwnProperty.call(payload, 'socketPort')) {
+      // Preserve explicit null so callers can clear socketPort (logout/session cleanup).
+      if (payload.socketPort === null) {
+        sanitized.socketPort = null;
+      } else if (
+        typeof payload.socketPort === 'number' &&
+        Number.isInteger(payload.socketPort) &&
+        payload.socketPort > 0 &&
+        payload.socketPort <= 65535
+      ) {
+        sanitized.socketPort = payload.socketPort;
+      } else {
+        delete sanitized.socketPort;
+      }
     }
 
-    const hasPixelStreamUrl =
-      Object.prototype.hasOwnProperty.call(payload, 'pixelStreamUrl') &&
-      typeof payload.pixelStreamUrl === 'string';
-    if (hasPixelStreamUrl) {
-      const normalizedPixelStreamUrl = payload.pixelStreamUrl!.trim();
-      if (normalizedPixelStreamUrl.length === 0) {
-        delete sanitized.pixelStreamUrl;
+    if (Object.prototype.hasOwnProperty.call(payload, 'pixelStreamUrl')) {
+      // Preserve explicit null so callers can clear pixelStreamUrl.
+      if (payload.pixelStreamUrl === null) {
+        sanitized.pixelStreamUrl = null;
+      } else if (typeof payload.pixelStreamUrl === 'string') {
+        const normalizedPixelStreamUrl = payload.pixelStreamUrl.trim();
+        if (normalizedPixelStreamUrl.length === 0) {
+          delete sanitized.pixelStreamUrl;
+        } else {
+          sanitized.pixelStreamUrl = normalizedPixelStreamUrl as T['pixelStreamUrl'];
+        }
       } else {
-        sanitized.pixelStreamUrl = normalizedPixelStreamUrl as T['pixelStreamUrl'];
+        delete sanitized.pixelStreamUrl;
       }
     }
 
@@ -140,7 +119,6 @@ export class UsersService {
     } catch (error: any) {
       this.mapDatabaseError(error);
     }
-    await this.ensurePixelStreamAssignment(savedUser);
     return savedUser;
   }
 
@@ -168,12 +146,8 @@ export class UsersService {
       ],
     });
     
-    const usersWithAssignments = await Promise.all(
-      users.map(async (user) => this.ensurePixelStreamAssignment(user)),
-    );
-
     // Return users with wallets (or empty array if none)
-    return usersWithAssignments.map(user => ({
+    return users.map(user => ({
       ...user,
       wallets: user.wallets || [],
     }));
@@ -207,8 +181,6 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    await this.ensurePixelStreamAssignment(user);
-
     // Return user with wallets (or empty array if none)
     return {
       ...user,
@@ -416,8 +388,6 @@ export class UsersService {
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    await this.ensurePixelStreamAssignment(user);
-
     console.log(`✅ Profile fetched for user ${currentUserId} with ${user.stampsCollected || 0} stamps`);
     
     // Load wallets relation and stability signal fields
@@ -451,8 +421,6 @@ export class UsersService {
     if (!userWithWallets) {
       throw new NotFoundException('User not found');
     }
-    await this.ensurePixelStreamAssignment(userWithWallets);
-
     // Return user with wallets and stability signal fields
     return {
       id: userWithWallets.id,

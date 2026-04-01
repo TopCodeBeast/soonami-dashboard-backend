@@ -2,13 +2,113 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, In } from 'typeorm';
 import { UserToken } from '../entities/user-token.entity';
+import { User } from '../../users/entities/user.entity';
+import { StreamInstance } from '../entities/stream-instance.entity';
 
 @Injectable()
 export class TokenService {
   constructor(
     @InjectRepository(UserToken)
     private tokenRepository: Repository<UserToken>,
+    @InjectRepository(User)
+    private userRepository: Repository<User>,
+    @InjectRepository(StreamInstance)
+    private streamInstanceRepository: Repository<StreamInstance>,
   ) {}
+
+  private async cleanupAssignmentsForInactiveUsers(userIds: string[]): Promise<void> {
+    if (userIds.length === 0) {
+      return;
+    }
+
+    const uniqueUserIds = Array.from(new Set(userIds.filter(Boolean)));
+    if (uniqueUserIds.length === 0) {
+      return;
+    }
+
+    const now = new Date();
+    const stillActiveRows = await this.tokenRepository
+      .createQueryBuilder('token')
+      .select('DISTINCT token.userId', 'userId')
+      .where('token.userId IN (:...userIds)', { userIds: uniqueUserIds })
+      .andWhere('token.isActive = :isActive', { isActive: true })
+      .andWhere('token.expiresAt > :now', { now })
+      .getRawMany<{ userId: string }>();
+
+    const activeUserIds = new Set(stillActiveRows.map((row) => row.userId));
+    const inactiveUserIds = uniqueUserIds.filter((userId) => !activeUserIds.has(userId));
+
+    if (inactiveUserIds.length === 0) {
+      return;
+    }
+
+    await this.tokenRepository.manager.transaction(async (manager) => {
+      await manager.getRepository(StreamInstance).update(
+        { userId: In(inactiveUserIds) },
+        { userId: null, userEmail: null },
+      );
+      await manager.getRepository(User).update(
+        { id: In(inactiveUserIds) },
+        {
+          socketPort: null,
+          pixelStreamUrl: null,
+        },
+      );
+    });
+  }
+
+  private async cleanupStaleStreamAssignmentsWithoutActiveTokens(): Promise<number> {
+    const now = new Date();
+    const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
+
+    const staleAssignments = await this.streamInstanceRepository
+      .createQueryBuilder('stream')
+      .where('stream.userId IS NOT NULL')
+      .andWhere('stream.updatedAt <= :fiveMinutesAgo', { fiveMinutesAgo })
+      .getMany();
+
+    if (staleAssignments.length === 0) {
+      return 0;
+    }
+
+    const staleUserIds = staleAssignments
+      .map((assignment) => assignment.userId)
+      .filter((userId): userId is string => Boolean(userId));
+
+    if (staleUserIds.length === 0) {
+      return 0;
+    }
+
+    const stillActiveRows = await this.tokenRepository
+      .createQueryBuilder('token')
+      .select('DISTINCT token.userId', 'userId')
+      .where('token.userId IN (:...userIds)', { userIds: staleUserIds })
+      .andWhere('token.isActive = :isActive', { isActive: true })
+      .andWhere('token.expiresAt > :now', { now })
+      .getRawMany<{ userId: string }>();
+
+    const activeUserIds = new Set(stillActiveRows.map((row) => row.userId));
+    const releasableUserIds = staleUserIds.filter((userId) => !activeUserIds.has(userId));
+    if (releasableUserIds.length === 0) {
+      return 0;
+    }
+
+    await this.tokenRepository.manager.transaction(async (manager) => {
+      await manager.getRepository(StreamInstance).update(
+        { userId: In(releasableUserIds) },
+        { userId: null, userEmail: null },
+      );
+      await manager.getRepository(User).update(
+        { id: In(releasableUserIds) },
+        { socketPort: null, pixelStreamUrl: null },
+      );
+    });
+
+    console.log(
+      `[CLEANUP] Released ${releasableUserIds.length} stale stream assignment(s) after 5+ min inactivity`,
+    );
+    return releasableUserIds.length;
+  }
 
   /**
    * Create a new token record (only for non-dashboard frontends; dashboard does not store tokens).
@@ -166,7 +266,16 @@ export class TokenService {
    * Expire a token (mark as inactive)
    */
   async expireToken(token: string): Promise<void> {
+    const existingToken = await this.tokenRepository.findOne({
+      where: { token },
+      select: ['id', 'userId'],
+    });
+
     await this.tokenRepository.update({ token }, { isActive: false });
+
+    if (existingToken?.userId) {
+      await this.cleanupAssignmentsForInactiveUsers([existingToken.userId]);
+    }
   }
 
   /**
@@ -319,6 +428,10 @@ export class TokenService {
     const expiredByBrowserClose = tokensToExpire.filter(
       t => t.expiresAt > now && t.lastActivityAt <= twoMinutesAgo
     );
+    const expiredUserIds = [
+      ...expiredByTime.map((token) => token.userId),
+      ...expiredByBrowserClose.map((token) => token.userId),
+    ];
     
     // Group by frontend service for logging
     const expiredByFrontend: Record<string, number> = {};
@@ -367,6 +480,9 @@ export class TokenService {
     }
 
     console.log(`[CLEANUP] Summary: ${expiredByTimeCount} tokens expired by absolute expiration, ${expiredByBrowserCloseCount} tokens expired by browser close`);
+
+    await this.cleanupAssignmentsForInactiveUsers(expiredUserIds);
+    await this.cleanupStaleStreamAssignmentsWithoutActiveTokens();
 
     return expiredByTimeCount + expiredByBrowserCloseCount;
   }
