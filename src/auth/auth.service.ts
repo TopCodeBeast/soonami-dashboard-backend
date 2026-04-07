@@ -164,15 +164,9 @@ export class AuthService {
       const streamInstanceRepo = manager.getRepository(StreamInstance);
       const userRepo = manager.getRepository(User);
 
-      if (userId && normalizedEmail) {
-        await streamInstanceRepo
-          .createQueryBuilder()
-          .update(StreamInstance)
-          .set({ userId: null, userEmail: null })
-          .where('"userId" = :userId', { userId })
-          .orWhere('LOWER("userEmail") = :userEmail', { userEmail: normalizedEmail })
-          .execute();
-      } else if (userId) {
+      // Never use OR across userId and email: that can clear another user's row if
+      // userEmail was stale/wrong, freeing a slot and later showing the wrong email on login.
+      if (userId) {
         await streamInstanceRepo.update({ userId }, { userId: null, userEmail: null });
       } else if (normalizedEmail) {
         await streamInstanceRepo
@@ -774,8 +768,15 @@ export class AuthService {
       await this.tokenService.updateActivity(token, frontendService);
       const decoded = this.jwtService.decode(token) as { sub?: string; email?: string } | null;
       const userId = decoded?.sub;
-      const userEmail = decoded?.email?.toLowerCase().trim();
+      let userEmail = decoded?.email?.toLowerCase().trim() || null;
       if (userId) {
+        const dbUser = await this.userRepository.findOne({
+          where: { id: userId },
+          select: ['id', 'email'],
+        });
+        if (dbUser?.email) {
+          userEmail = dbUser.email.toLowerCase().trim();
+        }
         await this.streamInstanceRepository.update(
           { userId },
           { userEmail: userEmail || null },
