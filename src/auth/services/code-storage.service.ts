@@ -7,17 +7,108 @@ interface CodeData {
   maxAttempts: number;
 }
 
+interface RateLimitResult {
+  allowed: boolean;
+  message: string;
+}
+
 @Injectable()
 export class CodeStorageService {
   private readonly logger = new Logger(CodeStorageService.name);
   private readonly codes: Map<string, CodeData> = new Map();
+  private readonly emailRequestTimestamps: Map<string, number[]> = new Map();
+  private readonly ipRequestTimestamps: Map<string, number[]> = new Map();
+  private readonly ipDailyRequestCount: Map<string, { dateKey: string; count: number }> = new Map();
+  private readonly emailLastRequestAt: Map<string, number> = new Map();
   private readonly codeExpiryMinutes = 10;
   private readonly codeLength = 6;
+  private readonly resendCooldownMs = 60 * 1000;
+  private readonly emailWindowMs = 10 * 60 * 1000;
+  private readonly emailWindowLimit = 3;
+  private readonly ipWindowMs = 10 * 60 * 1000;
+  private readonly ipWindowLimit = 10;
+  private readonly ipDailyLimit = 100;
 
   generateCode(): string {
     return Array.from({ length: this.codeLength }, () =>
       Math.floor(Math.random() * 10),
     ).join('');
+  }
+
+  private pruneWindow(timestamps: number[], now: number, windowMs: number): number[] {
+    return timestamps.filter((timestamp) => now - timestamp <= windowMs);
+  }
+
+  private getDateKey(now: Date): string {
+    return now.toISOString().split('T')[0];
+  }
+
+  checkRequestRateLimit(email: string, rawClientIp?: string): RateLimitResult {
+    const nowDate = new Date();
+    const now = nowDate.getTime();
+    const emailLower = email.toLowerCase().trim();
+    const clientIp = (rawClientIp || 'unknown').trim();
+
+    const lastSentAt = this.emailLastRequestAt.get(emailLower);
+    if (lastSentAt) {
+      const elapsed = now - lastSentAt;
+      if (elapsed < this.resendCooldownMs) {
+        const retryAfter = Math.ceil((this.resendCooldownMs - elapsed) / 1000);
+        return {
+          allowed: false,
+          message: `Please wait ${retryAfter} seconds before requesting a new code.`,
+        };
+      }
+    }
+
+    const emailTimestamps = this.pruneWindow(
+      this.emailRequestTimestamps.get(emailLower) || [],
+      now,
+      this.emailWindowMs,
+    );
+    if (emailTimestamps.length >= this.emailWindowLimit) {
+      return {
+        allowed: false,
+        message: 'Too many verification requests for this email. Please try again later.',
+      };
+    }
+
+    const ipTimestamps = this.pruneWindow(
+      this.ipRequestTimestamps.get(clientIp) || [],
+      now,
+      this.ipWindowMs,
+    );
+    if (ipTimestamps.length >= this.ipWindowLimit) {
+      return {
+        allowed: false,
+        message: 'Too many requests from this network. Please try again later.',
+      };
+    }
+
+    const currentDateKey = this.getDateKey(nowDate);
+    const dailyCounter = this.ipDailyRequestCount.get(clientIp);
+    const currentDailyCount =
+      dailyCounter && dailyCounter.dateKey === currentDateKey ? dailyCounter.count : 0;
+
+    if (currentDailyCount >= this.ipDailyLimit) {
+      return {
+        allowed: false,
+        message: 'Daily verification request limit reached from this network.',
+      };
+    }
+
+    emailTimestamps.push(now);
+    ipTimestamps.push(now);
+
+    this.emailRequestTimestamps.set(emailLower, emailTimestamps);
+    this.ipRequestTimestamps.set(clientIp, ipTimestamps);
+    this.ipDailyRequestCount.set(clientIp, {
+      dateKey: currentDateKey,
+      count: currentDailyCount + 1,
+    });
+    this.emailLastRequestAt.set(emailLower, now);
+
+    return { allowed: true, message: 'ok' };
   }
 
   storeCode(email: string): string {
@@ -134,6 +225,38 @@ export class CodeStorageService {
     expiredEmails.forEach((email) => this.codes.delete(email));
     if (expiredEmails.length > 0) {
       this.logger.log(`Cleaned up ${expiredEmails.length} expired codes`);
+    }
+
+    const currentMs = now.getTime();
+    for (const [email, timestamps] of this.emailRequestTimestamps.entries()) {
+      const pruned = this.pruneWindow(timestamps, currentMs, this.emailWindowMs);
+      if (pruned.length === 0) {
+        this.emailRequestTimestamps.delete(email);
+      } else {
+        this.emailRequestTimestamps.set(email, pruned);
+      }
+    }
+
+    for (const [ip, timestamps] of this.ipRequestTimestamps.entries()) {
+      const pruned = this.pruneWindow(timestamps, currentMs, this.ipWindowMs);
+      if (pruned.length === 0) {
+        this.ipRequestTimestamps.delete(ip);
+      } else {
+        this.ipRequestTimestamps.set(ip, pruned);
+      }
+    }
+
+    const currentDateKey = this.getDateKey(now);
+    for (const [ip, dailyCounter] of this.ipDailyRequestCount.entries()) {
+      if (dailyCounter.dateKey !== currentDateKey) {
+        this.ipDailyRequestCount.delete(ip);
+      }
+    }
+
+    for (const [email, timestamp] of this.emailLastRequestAt.entries()) {
+      if (currentMs - timestamp > this.resendCooldownMs) {
+        this.emailLastRequestAt.delete(email);
+      }
     }
   }
 

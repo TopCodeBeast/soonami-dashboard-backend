@@ -3,6 +3,9 @@ import {
   UnauthorizedException,
   ConflictException,
   BadRequestException,
+  ServiceUnavailableException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -400,20 +403,27 @@ export class AuthService {
     throw new BadRequestException('Password changes are not supported. This system uses email verification code login.');
   }
 
-  async requestCode(requestCodeDto: RequestCodeDto) {
+  async requestCode(requestCodeDto: RequestCodeDto, clientIp?: string) {
     const email = requestCodeDto.email.toLowerCase().trim();
-    
+
+    const rateLimit = this.codeStorageService.checkRequestRateLimit(email, clientIp);
+    if (!rateLimit.allowed) {
+      throw new HttpException(rateLimit.message, HttpStatus.TOO_MANY_REQUESTS);
+    }
+
     // Generate and store code
     const code = this.codeStorageService.storeCode(email);
-    
+
     // Send code via email
     const emailSent = await this.emailService.sendVerificationCode(email, code);
-    
+
     if (!emailSent) {
-      // In development, we still return success even if email fails
-      // The code will be logged
+      this.codeStorageService.consumeCode(email);
+      throw new ServiceUnavailableException(
+        'Unable to send verification code right now. Please try again in a minute.',
+      );
     }
-    
+
     return { message: 'Verification code sent to your email' };
   }
 

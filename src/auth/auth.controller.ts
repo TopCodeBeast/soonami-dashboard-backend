@@ -38,6 +38,24 @@ export class AuthController {
     return baseService;
   }
 
+  private extractClientIp(req: any): string {
+    const forwardedForHeader = req.headers['x-forwarded-for'];
+    const forwardedFor = Array.isArray(forwardedForHeader)
+      ? forwardedForHeader[0]
+      : forwardedForHeader;
+    if (typeof forwardedFor === 'string' && forwardedFor.trim().length > 0) {
+      return forwardedFor.split(',')[0].trim();
+    }
+
+    const realIpHeader = req.headers['x-real-ip'];
+    const realIp = Array.isArray(realIpHeader) ? realIpHeader[0] : realIpHeader;
+    if (typeof realIp === 'string' && realIp.trim().length > 0) {
+      return realIp.trim();
+    }
+
+    return req.ip || req.socket?.remoteAddress || 'unknown';
+  }
+
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'User login' })
@@ -84,8 +102,9 @@ export class AuthController {
   @ApiOperation({ summary: 'Request verification code' })
   @ApiResponse({ status: 200, description: 'Verification code sent successfully' })
   @ApiResponse({ status: 422, description: 'Invalid email format' })
-  async requestCode(@Body() requestCodeDto: RequestCodeDto) {
-    return this.authService.requestCode(requestCodeDto);
+  async requestCode(@Body() requestCodeDto: RequestCodeDto, @Request() req: any) {
+    const clientIp = this.extractClientIp(req);
+    return this.authService.requestCode(requestCodeDto, clientIp);
   }
 
   @Post('verify-code')

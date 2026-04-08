@@ -6,13 +6,20 @@ import Mailgun from 'mailgun.js';
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
   private mailgunClient: any;
+  private smtpTransporter: any;
   private domain: string;
-  private fromEmail: string;
+  private mailgunFromEmail: string;
+  private smtpFromEmail: string;
 
   constructor() {
     const apiKey = process.env.MAILGUN_API_KEY;
     const domain = process.env.MAILGUN_DOMAIN;
     const fromEmail = process.env.MAILGUN_FROM_EMAIL || `noreply@${domain}`;
+    const smtpHost = process.env.SMTP_HOST;
+    const smtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
+    const smtpUser = process.env.SMTP_USER;
+    const smtpPassword = process.env.SMTP_PASSWORD;
+    const smtpFromEmail = process.env.SMTP_FROM_EMAIL || smtpUser || fromEmail;
 
     if (apiKey && domain) {
       try {
@@ -25,7 +32,7 @@ export class EmailService {
           key: apiKey,
         });
         this.domain = domain;
-        this.fromEmail = fromEmail;
+        this.mailgunFromEmail = fromEmail;
         this.logger.log('Mailgun email service initialized successfully');
       } catch (error) {
         this.logger.error(`Failed to initialize Mailgun client: ${error}`);
@@ -37,21 +44,36 @@ export class EmailService {
     } else {
       this.logger.warn('Mailgun not configured. Email sending will be disabled.');
     }
+
+    if (smtpHost && smtpUser && smtpPassword) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const nodemailer = require('nodemailer');
+        const secure = smtpPort === 465;
+        this.smtpTransporter = nodemailer.createTransport({
+          host: smtpHost,
+          port: smtpPort,
+          secure,
+          auth: {
+            user: smtpUser,
+            pass: smtpPassword,
+          },
+        });
+        this.smtpFromEmail = smtpFromEmail;
+        this.logger.log('SMTP email fallback initialized successfully');
+      } catch (error) {
+        this.logger.error(`Failed to initialize SMTP transporter: ${error}`);
+      }
+    } else {
+      this.logger.warn('SMTP fallback not configured.');
+    }
   }
 
-  async sendVerificationCode(email: string, code: string): Promise<boolean> {
-    try {
-      // In development, if Mailgun is not configured, just log the code
-      if (!this.mailgunClient || !this.domain) {
-        this.logger.warn(`Mailgun not configured. Verification code for ${email}: ${code}`);
-        return true; // Return true in dev mode to allow testing
-      }
-
-      const messageData = {
-        from: this.fromEmail,
-        to: email,
-        subject: 'Your Login Verification Code - Anna Crowdtale',
-        text: `
+  private buildMessageData(email: string, code: string) {
+    return {
+      to: email,
+      subject: 'Your Login Verification Code - Anna Crowdtale',
+      text: `
 Hello,
 
 Your Anna login code is: ${code}
@@ -63,7 +85,7 @@ If you didn't request this code, please ignore this email.
 Best regards,
 Anna Crowdtale Team
 `,
-        html: `
+      html: `
 <!DOCTYPE html>
 <html>
 <head>
@@ -114,13 +136,63 @@ Anna Crowdtale Team
 </body>
 </html>
 `,
-      };
+    };
+  }
 
-      const response = await this.mailgunClient.messages.create(this.domain, messageData);
-      this.logger.log(`Verification code sent to ${email} via Mailgun. Message ID: ${response.id}`);
+  private isRateLimitedError(error: any): boolean {
+    const statusCode = error?.status || error?.statusCode || error?.details?.status;
+    const errorText = String(error?.message || error || '').toLowerCase();
+    return statusCode === 429 || errorText.includes('too many requests') || errorText.includes('429');
+  }
+
+  private async sendViaSmtp(email: string, code: string): Promise<boolean> {
+    if (!this.smtpTransporter) {
+      return false;
+    }
+
+    const message = this.buildMessageData(email, code);
+    await this.smtpTransporter.sendMail({
+      from: this.smtpFromEmail,
+      to: message.to,
+      subject: message.subject,
+      text: message.text,
+      html: message.html,
+    });
+    this.logger.log(`Verification code sent to ${email} via SMTP fallback`);
+    return true;
+  }
+
+  async sendVerificationCode(email: string, code: string): Promise<boolean> {
+    const messageData = this.buildMessageData(email, code);
+
+    try {
+      if (this.mailgunClient && this.domain) {
+        const response = await this.mailgunClient.messages.create(this.domain, {
+          from: this.mailgunFromEmail,
+          ...messageData,
+        });
+        this.logger.log(`Verification code sent to ${email} via Mailgun. Message ID: ${response.id}`);
+        return true;
+      }
+
+      if (this.smtpTransporter) {
+        return this.sendViaSmtp(email, code);
+      }
+
+      this.logger.warn(`No email provider configured. Verification code for ${email}: ${code}`);
       return true;
     } catch (error) {
-      this.logger.error(`Failed to send verification code to ${email} via Mailgun: ${error}`);
+      if (this.isRateLimitedError(error) && this.smtpTransporter) {
+        this.logger.warn(`Mailgun rate-limited for ${email}. Trying SMTP fallback.`);
+        try {
+          return await this.sendViaSmtp(email, code);
+        } catch (smtpError) {
+          this.logger.error(`SMTP fallback also failed for ${email}: ${smtpError}`);
+          return false;
+        }
+      }
+
+      this.logger.error(`Failed to send verification code to ${email}: ${error}`);
       return false;
     }
   }
