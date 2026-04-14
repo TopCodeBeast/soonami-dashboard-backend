@@ -13,18 +13,12 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { UsersService } from './users.service';
-import { CreateUserDto, SaveGameDto, UpdateUserDto } from './dto/user.dto';
+import { CreateUserDto, UpdateUserDto } from './dto/user.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { GemTransactionType } from './entities/gem-transaction.entity';
 import { UserItemsService } from './user-items.service';
 import { UserItemType } from './entities/user-item.entity';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { IsString } from 'class-validator';
-
-class UpdateGameSaveFileDto {
-  @IsString()
-  jsonString: string;
-}
 
 @ApiTags('Users')
 @Controller('users')
@@ -62,32 +56,30 @@ export class UsersController {
 
   @Get('me/game-save')
   @ApiOperation({ summary: 'Get current user game save data' })
-  @ApiResponse({ status: 200, description: 'Game save data retrieved successfully' })
-  async getMyGameSave(@Request() req: any) {
-    const saveData = await this.usersService.getGameSave(req.user.userId);
-    return { saveData };
+  @ApiResponse({ status: 200, description: 'Game save transfer is disabled' })
+  async getMyGameSave() {
+    return { status: 'disabled', saveData: '' };
   }
 
   @Put('me/game-save')
   @ApiOperation({ summary: 'Save current user game save data' })
-  @ApiResponse({ status: 200, description: 'Game save data saved successfully' })
-  async saveMyGameSave(@Body() body: SaveGameDto, @Request() req: any) {
-    await this.usersService.saveGameSave(req.user.userId, body.saveData);
-    return { ok: true };
+  @ApiResponse({ status: 200, description: 'Game save transfer is disabled' })
+  async saveMyGameSave() {
+    return { ok: false, status: 'disabled' };
   }
 
   @Get('game-save-file')
   @ApiOperation({ summary: 'Get current user game save file' })
-  @ApiResponse({ status: 200, description: 'Game save file retrieved successfully' })
-  async getGameSaveFile(@Request() req: any) {
-    return this.usersService.getGameSaveFile(req.user.userId);
+  @ApiResponse({ status: 200, description: 'Game save transfer is disabled' })
+  async getGameSaveFile() {
+    return { status: 'disabled', jsonString: '' };
   }
 
   @Post('game-save-file')
   @ApiOperation({ summary: 'Update current user game save file' })
-  @ApiResponse({ status: 200, description: 'Game save file updated successfully' })
-  async updateGameSaveFile(@Body() body: UpdateGameSaveFileDto, @Request() req: any) {
-    return this.usersService.updateGameSaveFile(req.user.userId, body?.jsonString ?? '');
+  @ApiResponse({ status: 200, description: 'Game save transfer is disabled' })
+  async updateGameSaveFile() {
+    return { success: false, updated: false, status: 'disabled' };
   }
 
   @Get('items')

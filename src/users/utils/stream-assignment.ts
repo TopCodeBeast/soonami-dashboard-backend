@@ -12,22 +12,6 @@ export interface UserStreamState {
   pixelStreamUrl: string | null;
 }
 
-const DEFAULT_MAX_STREAM_INSTANCES = 3;
-
-function getMaxStreamInstances(): number {
-  const rawValue = process.env.PIXEL_STREAM_MAX_INSTANCES;
-  if (!rawValue || !rawValue.trim()) {
-    return DEFAULT_MAX_STREAM_INSTANCES;
-  }
-
-  const parsed = Number.parseInt(rawValue, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return DEFAULT_MAX_STREAM_INSTANCES;
-  }
-
-  return parsed;
-}
-
 function readPoolFileLines(fileName: string): string[] {
   const candidates = [
     resolve(process.cwd(), 'streaming', fileName),
@@ -84,36 +68,21 @@ export function loadStreamAssignmentPool(): StreamAssignment[] {
     };
   });
 
-  const maxInstances = getMaxStreamInstances();
-  return completePool.slice(0, maxInstances);
+  // Single-session mode: always expose exactly one configured stream entry.
+  return completePool.slice(0, 1);
 }
 
 export function getNextAvailableStreamAssignment(
   allUsers: UserStreamState[],
 ): StreamAssignment {
+  void allUsers;
   const pool = loadStreamAssignmentPool();
-  const usedPorts = new Set<number>();
-  const usedUrls = new Set<string>();
-
-  allUsers.forEach((user) => {
-    if (typeof user.socketPort === 'number') {
-      usedPorts.add(user.socketPort);
-    }
-    if (user.pixelStreamUrl) {
-      usedUrls.add(user.pixelStreamUrl);
-    }
-  });
-
-  const available = pool.find(
-    (entry) =>
-      !usedPorts.has(entry.socketPort) && !usedUrls.has(entry.pixelStreamUrl),
-  );
-
-  if (!available) {
+  const primary = pool[0];
+  if (!primary) {
     throw new Error(
       'No available socket port + pixel stream URL assignment in pool',
     );
   }
 
-  return available;
+  return primary;
 }

@@ -30,12 +30,7 @@ export class AuthController {
   ) {}
 
   private buildFrontendService(req: any): string | null {
-    const baseService = req.headers['x-frontend-service'] || req.headers['frontend-service'] || null;
-    const slot = req.headers['x-pixel-stream-slot'];
-    if (baseService && slot) {
-      return `${baseService}|slot:${slot}`;
-    }
-    return baseService;
+    return req.headers['x-frontend-service'] || req.headers['frontend-service'] || null;
   }
 
   private extractClientIp(req: any): string {
@@ -287,7 +282,7 @@ export class AuthController {
     }
 
     const targetFrontend = body?.targetFrontend || 'python-ai-frontend';
-    const slotCount = Number(body?.slotCount || 3);
+    const slotCount = Number(body?.slotCount || 1);
     const dryRun = Boolean(body?.dryRun);
 
     return this.tokenService.migrateExistingFrontendSlots(targetFrontend, slotCount, dryRun);

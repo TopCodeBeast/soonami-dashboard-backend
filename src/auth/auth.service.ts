@@ -39,105 +39,42 @@ export class AuthService {
     private dataSource: DataSource,
   ) {}
 
-  private async ensureStreamInstancePool(): Promise<void> {
-    const pool = loadStreamAssignmentPool();
-    if (pool.length === 0) {
-      return;
+  private isSessionConflictError(error: unknown): boolean {
+    if (error instanceof ConflictException) {
+      return true;
     }
 
-    const existingInstances = await this.streamInstanceRepository.find({
-      select: ['id', 'socketPort', 'pixelStreamUrl', 'userId', 'userEmail'],
-    });
-    const existingByPort = new Map(
-      existingInstances.map((instance) => [instance.socketPort, instance]),
+    const message =
+      typeof (error as any)?.message === 'string'
+        ? (error as any).message
+        : String((error as any)?.message ?? '');
+
+    return (
+      message.includes('Active token exists') ||
+      message.includes('Another session is already logged in')
     );
+  }
 
-    for (const entry of pool) {
-      const existing = existingByPort.get(entry.socketPort);
-      if (!existing) {
-        await this.streamInstanceRepository.insert({
-          socketPort: entry.socketPort,
-          pixelStreamUrl: entry.pixelStreamUrl,
-          userId: null,
-          userEmail: null,
-        });
-        continue;
-      }
-
-      if (
-        existing.userId == null &&
-        existing.pixelStreamUrl !== entry.pixelStreamUrl
-      ) {
-        await this.streamInstanceRepository.update(existing.id, {
-          pixelStreamUrl: entry.pixelStreamUrl,
-        });
-      }
-    }
+  private async ensureStreamInstancePool(): Promise<void> {
+    // Temporarily disabled: do not mutate stream_instances table.
+    return;
   }
 
   private async ensurePixelStreamAssignment(user: User): Promise<User> {
-    await this.ensureStreamInstancePool();
-
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-
-    try {
-      const instanceRepo = queryRunner.manager.getRepository(StreamInstance);
-      const userRepo = queryRunner.manager.getRepository(User);
-
-      let instance = await instanceRepo
-        .createQueryBuilder('instance')
-        .setLock('pessimistic_write')
-        .where('instance.userId = :userId', { userId: user.id })
-        .getOne();
-
-      if (!instance) {
-        instance = await instanceRepo
-          .createQueryBuilder('instance')
-          .setLock('pessimistic_write')
-          .where('instance.userId IS NULL')
-          .orderBy('instance.socketPort', 'ASC')
-          .getOne();
-
-        if (!instance) {
-          throw new ConflictException(
-            'No available stream instances. Please try again later.',
-          );
-        }
-
-        await instanceRepo.update(instance.id, {
-          userId: user.id,
-          userEmail: user.email,
-        });
-      } else if (instance.userEmail !== user.email) {
-        await instanceRepo.update(instance.id, {
-          userEmail: user.email,
-        });
-      }
-
-      const updatedFields: Partial<User> = {};
-      if (user.socketPort !== instance.socketPort) {
-        updatedFields.socketPort = instance.socketPort;
-      }
-      if (user.pixelStreamUrl !== instance.pixelStreamUrl) {
-        updatedFields.pixelStreamUrl = instance.pixelStreamUrl;
-      }
-
-      if (Object.keys(updatedFields).length > 0) {
-        await userRepo.update(user.id, updatedFields);
-      }
-
-      user.socketPort = instance.socketPort;
-      user.pixelStreamUrl = instance.pixelStreamUrl;
-
-      await queryRunner.commitTransaction();
-    } catch (error) {
-      await queryRunner.rollbackTransaction();
-      throw error;
-    } finally {
-      await queryRunner.release();
+    const pool = loadStreamAssignmentPool();
+    const primary = pool[0];
+    if (!primary) {
+      throw new ConflictException(
+        'No stream instance is configured. Please contact support.',
+      );
     }
+
+    // Do not persist shared stream endpoint into users table.
+    // The users table still has unique constraints for these columns in some deployments,
+    // and shared-mode intentionally allows multiple users to use the same endpoint.
+
+    user.socketPort = primary.socketPort;
+    user.pixelStreamUrl = primary.pixelStreamUrl;
 
     return user;
   }
@@ -164,22 +101,9 @@ export class AuthService {
   ): Promise<void> {
     const normalizedEmail = userEmail?.toLowerCase().trim() || null;
     await this.dataSource.transaction(async (manager) => {
-      const streamInstanceRepo = manager.getRepository(StreamInstance);
       const userRepo = manager.getRepository(User);
 
-      // Never use OR across userId and email: that can clear another user's row if
-      // userEmail was stale/wrong, freeing a slot and later showing the wrong email on login.
-      if (userId) {
-        await streamInstanceRepo.update({ userId }, { userId: null, userEmail: null });
-      } else if (normalizedEmail) {
-        await streamInstanceRepo
-          .createQueryBuilder()
-          .update(StreamInstance)
-          .set({ userId: null, userEmail: null })
-          .where('LOWER("userEmail") = :userEmail', { userEmail: normalizedEmail })
-          .execute();
-      }
-
+      // Shared-stream mode: only clear user-level stream fields.
       if (userId) {
         await userRepo.update(userId, {
           socketPort: null,
@@ -197,6 +121,7 @@ export class AuthService {
   }
 
   async listStreamInstances() {
+    await this.ensureStreamInstancePool();
     const instances = await this.streamInstanceRepository.find({
       order: { socketPort: 'ASC' },
     });
@@ -216,83 +141,11 @@ export class AuthService {
     instanceId: string,
     userEmail?: string | null,
   ) {
-    const normalizedEmail = userEmail?.trim().toLowerCase() || null;
-
-    return this.dataSource.transaction(async (manager) => {
-      const instanceRepo = manager.getRepository(StreamInstance);
-      const userRepo = manager.getRepository(User);
-
-      const instance = await instanceRepo.findOne({ where: { id: instanceId } });
-      if (!instance) {
-        throw new BadRequestException('Stream instance not found');
-      }
-
-      if (!normalizedEmail) {
-        if (instance.userId) {
-          await userRepo.update(instance.userId, {
-            socketPort: null,
-            pixelStreamUrl: null,
-          });
-        }
-
-        await instanceRepo.update(instance.id, {
-          userId: null,
-          userEmail: null,
-        });
-      } else {
-        const targetUser = await userRepo
-          .createQueryBuilder('user')
-          .where('LOWER(user.email) = :email', { email: normalizedEmail })
-          .getOne();
-
-        if (!targetUser) {
-          throw new BadRequestException('No user found for this email');
-        }
-
-        if (instance.userId && instance.userId !== targetUser.id) {
-          await userRepo.update(instance.userId, {
-            socketPort: null,
-            pixelStreamUrl: null,
-          });
-        }
-
-        await instanceRepo
-          .createQueryBuilder()
-          .update(StreamInstance)
-          .set({ userId: null, userEmail: null })
-          .where('"userId" = :userId', { userId: targetUser.id })
-          .andWhere('id != :instanceId', { instanceId: instance.id })
-          .execute();
-
-        await instanceRepo.update(instance.id, {
-          userId: targetUser.id,
-          userEmail: targetUser.email,
-        });
-
-        await userRepo.update(targetUser.id, {
-          socketPort: instance.socketPort,
-          pixelStreamUrl: instance.pixelStreamUrl,
-        });
-      }
-
-      const updatedInstance = await instanceRepo.findOne({
-        where: { id: instance.id },
-      });
-
-      if (!updatedInstance) {
-        throw new BadRequestException('Stream instance not found after update');
-      }
-
-      return {
-        id: updatedInstance.id,
-        socketPort: updatedInstance.socketPort,
-        pixelStreamUrl: updatedInstance.pixelStreamUrl,
-        userId: updatedInstance.userId,
-        userEmail: updatedInstance.userEmail,
-        createdAt: updatedInstance.createdAt,
-        updatedAt: updatedInstance.updatedAt,
-      };
-    });
+    void instanceId;
+    void userEmail;
+    throw new BadRequestException(
+      'Updating stream_instances is temporarily disabled.',
+    );
   }
 
   async validateUser(email: string, password: string): Promise<any> {
@@ -566,7 +419,7 @@ export class AuthService {
           await this.tokenService.createToken(existingUser.id, email, accessToken, frontendService);
           console.log(`[LOGIN] ✅ Token created successfully for ${email}`);
         } catch (error: any) {
-          if (error.message.includes('Active token exists')) {
+          if (this.isSessionConflictError(error)) {
             console.log(`[LOGIN] ❌ Token creation blocked - active token exists for ${email}`);
             throw new ConflictException('Another session is already logged in. Please close other sessions or try again later.');
           }
@@ -706,7 +559,7 @@ export class AuthService {
       try {
         await this.tokenService.createToken(user.id, emailLower, accessToken, frontendService);
       } catch (error: any) {
-        if (error.message.includes('Active token exists')) {
+        if (this.isSessionConflictError(error)) {
           throw new ConflictException('Another session is already logged in. Please close other sessions or try again later.');
         }
         throw error;
@@ -776,22 +629,6 @@ export class AuthService {
   async updateActivity(token: string, frontendService?: string): Promise<{ ok: boolean }> {
     if (token) {
       await this.tokenService.updateActivity(token, frontendService);
-      const decoded = this.jwtService.decode(token) as { sub?: string; email?: string } | null;
-      const userId = decoded?.sub;
-      let userEmail = decoded?.email?.toLowerCase().trim() || null;
-      if (userId) {
-        const dbUser = await this.userRepository.findOne({
-          where: { id: userId },
-          select: ['id', 'email'],
-        });
-        if (dbUser?.email) {
-          userEmail = dbUser.email.toLowerCase().trim();
-        }
-        await this.streamInstanceRepository.update(
-          { userId },
-          { userEmail: userEmail || null },
-        );
-      }
       if (frontendService) {
         console.log(`✅ Activity updated from frontend: ${frontendService}`);
       }
@@ -827,6 +664,16 @@ export class AuthService {
   async checkToken(checkTokenDto: CheckTokenDto): Promise<{ valid: boolean; user?: any }> {
     const { token, email } = checkTokenDto;
     const normalizedEmail = email.toLowerCase().trim();
+    let sharedSocketPort: number | null = null;
+    let sharedPixelStreamUrl: string | null = null;
+
+    try {
+      const sharedAssignment = loadStreamAssignmentPool()[0];
+      sharedSocketPort = sharedAssignment?.socketPort ?? null;
+      sharedPixelStreamUrl = sharedAssignment?.pixelStreamUrl ?? null;
+    } catch {
+      // Keep null fallback if shared stream config is unavailable.
+    }
 
     if (!token || !normalizedEmail) {
       return { valid: false };
@@ -851,8 +698,8 @@ export class AuthService {
           role: user.role,
           gem: user.gem,
           isActive: user.isActive,
-          socketPort: user.socketPort,
-          pixelStreamUrl: user.pixelStreamUrl,
+          socketPort: user.socketPort ?? sharedSocketPort,
+          pixelStreamUrl: user.pixelStreamUrl ?? sharedPixelStreamUrl,
           wallets: user.wallets || [],
         },
       };
@@ -877,8 +724,8 @@ export class AuthService {
           role: user.role,
           gem: user.gem,
           isActive: user.isActive,
-          socketPort: user.socketPort,
-          pixelStreamUrl: user.pixelStreamUrl,
+          socketPort: user.socketPort ?? sharedSocketPort,
+          pixelStreamUrl: user.pixelStreamUrl ?? sharedPixelStreamUrl,
           wallets: user.wallets || [],
         },
       };

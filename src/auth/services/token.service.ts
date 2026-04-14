@@ -1,9 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, LessThan, In } from 'typeorm';
 import { UserToken } from '../entities/user-token.entity';
 import { User } from '../../users/entities/user.entity';
-import { StreamInstance } from '../entities/stream-instance.entity';
 
 @Injectable()
 export class TokenService {
@@ -12,8 +11,6 @@ export class TokenService {
     private tokenRepository: Repository<UserToken>,
     @InjectRepository(User)
     private userRepository: Repository<User>,
-    @InjectRepository(StreamInstance)
-    private streamInstanceRepository: Repository<StreamInstance>,
   ) {}
 
   private async cleanupAssignmentsForInactiveUsers(userIds: string[]): Promise<void> {
@@ -42,72 +39,18 @@ export class TokenService {
       return;
     }
 
-    await this.tokenRepository.manager.transaction(async (manager) => {
-      await manager.getRepository(StreamInstance).update(
-        { userId: In(inactiveUserIds) },
-        { userId: null, userEmail: null },
-      );
-      await manager.getRepository(User).update(
-        { id: In(inactiveUserIds) },
-        {
-          socketPort: null,
-          pixelStreamUrl: null,
-        },
-      );
-    });
+    await this.tokenRepository.manager.getRepository(User).update(
+      { id: In(inactiveUserIds) },
+      {
+        socketPort: null,
+        pixelStreamUrl: null,
+      },
+    );
   }
 
   private async cleanupStaleStreamAssignmentsWithoutActiveTokens(): Promise<number> {
-    const now = new Date();
-    const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000);
-
-    const staleAssignments = await this.streamInstanceRepository
-      .createQueryBuilder('stream')
-      .where('stream.userId IS NOT NULL')
-      .andWhere('stream.updatedAt <= :fiveMinutesAgo', { fiveMinutesAgo })
-      .getMany();
-
-    if (staleAssignments.length === 0) {
-      return 0;
-    }
-
-    const staleUserIds = staleAssignments
-      .map((assignment) => assignment.userId)
-      .filter((userId): userId is string => Boolean(userId));
-
-    if (staleUserIds.length === 0) {
-      return 0;
-    }
-
-    const stillActiveRows = await this.tokenRepository
-      .createQueryBuilder('token')
-      .select('DISTINCT token.userId', 'userId')
-      .where('token.userId IN (:...userIds)', { userIds: staleUserIds })
-      .andWhere('token.isActive = :isActive', { isActive: true })
-      .andWhere('token.expiresAt > :now', { now })
-      .getRawMany<{ userId: string }>();
-
-    const activeUserIds = new Set(stillActiveRows.map((row) => row.userId));
-    const releasableUserIds = staleUserIds.filter((userId) => !activeUserIds.has(userId));
-    if (releasableUserIds.length === 0) {
-      return 0;
-    }
-
-    await this.tokenRepository.manager.transaction(async (manager) => {
-      await manager.getRepository(StreamInstance).update(
-        { userId: In(releasableUserIds) },
-        { userId: null, userEmail: null },
-      );
-      await manager.getRepository(User).update(
-        { id: In(releasableUserIds) },
-        { socketPort: null, pixelStreamUrl: null },
-      );
-    });
-
-    console.log(
-      `[CLEANUP] Released ${releasableUserIds.length} stale stream assignment(s) after 5+ min inactivity`,
-    );
-    return releasableUserIds.length;
+    // Temporarily disabled: do not mutate stream_instances table.
+    return 0;
   }
 
   /**
@@ -117,7 +60,9 @@ export class TokenService {
     const hasActive = await this.hasActiveToken(username, userId);
     if (hasActive) {
       console.log(`[TOKEN CREATE] ❌ BLOCKED: Active token exists for ${username} (userId: ${userId})`);
-      throw new Error('Another session is already logged in. Please close other sessions or wait for token to expire.');
+      throw new ConflictException(
+        'Another session is already logged in. Please close other sessions or wait for token to expire.',
+      );
     }
 
     const now = new Date();
@@ -493,7 +438,7 @@ export class TokenService {
    */
   async migrateExistingFrontendSlots(
     targetFrontend = 'python-ai-frontend',
-    slotCount = 3,
+    slotCount = 1,
     dryRun = false,
   ): Promise<{
     totalCandidates: number;
@@ -503,7 +448,7 @@ export class TokenService {
     dryRun: boolean;
     sample: Array<{ id: string; userId: string; before: string | null; after: string }>;
   }> {
-    const normalizedSlotCount = Number(slotCount) > 0 ? Number(slotCount) : 3;
+    const normalizedSlotCount = Number(slotCount) > 0 ? Number(slotCount) : 1;
 
     const tokens = await this.tokenRepository
       .createQueryBuilder('token')

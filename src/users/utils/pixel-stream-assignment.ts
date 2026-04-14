@@ -1,10 +1,8 @@
 const DEFAULT_PIXEL_STREAM_URLS = [
   'https://psi1.crowdtale.ai',
-  'https://psi2.crowdtale.ai',
-  'https://psi3.crowdtale.ai',
 ];
 
-const DEFAULT_SOCKET_PORTS = [13371, 13372, 13373];
+const DEFAULT_SOCKET_PORTS = [13371];
 
 function parseList(rawValue: string | undefined): string[] {
   if (!rawValue) return [];
@@ -47,7 +45,7 @@ function getPixelStreamUrls(): string[] {
 export function getPixelStreamConfig() {
   const urls = getPixelStreamUrls();
   const ports = getSocketPorts();
-  const slotCount = Math.min(urls.length, ports.length);
+  const slotCount = Math.min(urls.length, ports.length, 1);
   return {
     urls: urls.slice(0, slotCount),
     ports: ports.slice(0, slotCount),
@@ -57,11 +55,8 @@ export function getPixelStreamConfig() {
 
 export function computePixelStreamSlotIndex(userId: string, slotCount: number): number {
   if (slotCount <= 0) return -1;
-  let hash = 0;
-  for (let i = 0; i < userId.length; i += 1) {
-    hash = (hash * 31 + userId.charCodeAt(i)) >>> 0;
-  }
-  return hash % slotCount;
+  // Single-session mode: everyone resolves to the only slot.
+  return 0;
 }
 
 export function getAssignmentForUser(userId: string): { socketPort: number | null; pixelStreamUrl: string | null } {

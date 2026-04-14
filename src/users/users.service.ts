@@ -12,6 +12,7 @@ import { RoleHierarchy } from './utils/role-hierarchy';
 import { ManagerWhitelist } from './utils/manager-whitelist';
 import { GemTransactionsService } from './gem-transactions.service';
 import { GemTransactionType } from './entities/gem-transaction.entity';
+import { loadStreamAssignmentPool } from './utils/stream-assignment';
 // Wallet import - table may not exist, queries are wrapped in try-catch
 import { Wallet } from '../wallets/entities/wallet.entity';
 import { GemTransaction } from './entities/gem-transaction.entity';
@@ -48,38 +49,9 @@ export class UsersService {
     payload: T,
   ): Promise<T> {
     const sanitized = { ...payload };
-
-    if (Object.prototype.hasOwnProperty.call(payload, 'socketPort')) {
-      // Preserve explicit null so callers can clear socketPort (logout/session cleanup).
-      if (payload.socketPort === null) {
-        sanitized.socketPort = null;
-      } else if (
-        typeof payload.socketPort === 'number' &&
-        Number.isInteger(payload.socketPort) &&
-        payload.socketPort > 0 &&
-        payload.socketPort <= 65535
-      ) {
-        sanitized.socketPort = payload.socketPort;
-      } else {
-        delete sanitized.socketPort;
-      }
-    }
-
-    if (Object.prototype.hasOwnProperty.call(payload, 'pixelStreamUrl')) {
-      // Preserve explicit null so callers can clear pixelStreamUrl.
-      if (payload.pixelStreamUrl === null) {
-        sanitized.pixelStreamUrl = null;
-      } else if (typeof payload.pixelStreamUrl === 'string') {
-        const normalizedPixelStreamUrl = payload.pixelStreamUrl.trim();
-        if (normalizedPixelStreamUrl.length === 0) {
-          delete sanitized.pixelStreamUrl;
-        } else {
-          sanitized.pixelStreamUrl = normalizedPixelStreamUrl as T['pixelStreamUrl'];
-        }
-      } else {
-        delete sanitized.pixelStreamUrl;
-      }
-    }
+    // Stream ownership is controlled by login/token lifecycle only.
+    delete sanitized.socketPort;
+    delete sanitized.pixelStreamUrl;
 
     return sanitized;
   }
@@ -209,29 +181,13 @@ export class UsersService {
   }
 
   async getGameSave(userId: string): Promise<string | null> {
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-      select: ['id', 'gameSaveFile'],
-    });
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    return user.gameSaveFile ?? null;
+    void userId;
+    return null;
   }
 
   async saveGameSave(userId: string, saveData: string): Promise<void> {
-    const user = await this.userRepository.findOne({
-      where: { id: userId },
-      select: ['id'],
-    });
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    await this.userRepository.update(userId, { gameSaveFile: saveData });
+    void userId;
+    void saveData;
   }
 
   async update(
@@ -421,6 +377,24 @@ export class UsersService {
     if (!userWithWallets) {
       throw new NotFoundException('User not found');
     }
+
+    let fallbackSocketPort: number | null = null;
+    let fallbackPixelStreamUrl: string | null = null;
+    try {
+      const sharedAssignment = loadStreamAssignmentPool()[0];
+      fallbackSocketPort = sharedAssignment?.socketPort ?? null;
+      fallbackPixelStreamUrl = sharedAssignment?.pixelStreamUrl ?? null;
+    } catch (error: any) {
+      console.warn(
+        `[USERS PROFILE] Shared stream fallback unavailable: ${error?.message || error}`,
+      );
+    }
+
+    const resolvedSocketPort =
+      userWithWallets.socketPort ?? fallbackSocketPort;
+    const resolvedPixelStreamUrl =
+      userWithWallets.pixelStreamUrl ?? fallbackPixelStreamUrl;
+
     // Return user with wallets and stability signal fields
     return {
       id: userWithWallets.id,
@@ -429,8 +403,8 @@ export class UsersService {
       gem: userWithWallets.gem,
       role: userWithWallets.role,
       isActive: userWithWallets.isActive,
-      socketPort: userWithWallets.socketPort,
-      pixelStreamUrl: userWithWallets.pixelStreamUrl,
+      socketPort: resolvedSocketPort,
+      pixelStreamUrl: resolvedPixelStreamUrl,
       lastLoginAt: userWithWallets.lastLoginAt,
       stampsCollected: userWithWallets.stampsCollected,
       lastStampClaimDate: userWithWallets.lastStampClaimDate,
@@ -446,37 +420,21 @@ export class UsersService {
   }
 
   async getGameSaveFile(currentUserId: string) {
-    const user = await this.userRepository.findOne({
-      where: { id: currentUserId },
-      select: ['id', 'gameSaveFile'],
-    });
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
+    void currentUserId;
     return {
-      jsonString: user.gameSaveFile || '',
+      status: 'disabled',
+      jsonString: '',
     };
   }
 
   async updateGameSaveFile(currentUserId: string, jsonString: string) {
-    const user = await this.userRepository.findOne({
-      where: { id: currentUserId },
-      select: ['id'],
-    });
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    await this.userRepository.update(currentUserId, {
-      gameSaveFile: jsonString || '',
-    });
+    void currentUserId;
+    void jsonString;
 
     return {
-      success: true,
-      updated: true,
+      success: false,
+      updated: false,
+      status: 'disabled',
     };
   }
 
