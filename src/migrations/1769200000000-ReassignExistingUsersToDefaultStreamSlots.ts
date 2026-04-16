@@ -1,10 +1,8 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-const DEFAULT_SOCKET_PORTS = [13371, 13372, 13373];
+const DEFAULT_SOCKET_PORTS = [13370];
 const DEFAULT_PIXEL_STREAM_URLS = [
-  'https://psi1.crowdtale.ai',
-  'https://psi2.crowdtale.ai',
-  'https://psi3.crowdtale.ai',
+  'https://pixelstream.crowdtale.ai',
 ];
 
 type UserRow = {
@@ -73,7 +71,7 @@ export class ReassignExistingUsersToDefaultStreamSlots1769200000000
       return;
     }
 
-    // This migration intentionally reuses a small slot pool (13371~13373), so
+    // This migration intentionally reuses a small slot pool (13370), so
     // per-column uniqueness on users.socketPort/users.pixelStreamUrl must be dropped.
     await queryRunner.query(`
       DROP INDEX IF EXISTS "public"."IDX_users_socketPort_unique";

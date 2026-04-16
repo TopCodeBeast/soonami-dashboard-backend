@@ -2,7 +2,7 @@ const DEFAULT_PIXEL_STREAM_URLS = [
   'https://psi1.crowdtale.ai',
 ];
 
-const DEFAULT_SOCKET_PORTS = [13371];
+const DEFAULT_SOCKET_PORTS = [13370];
 
 function parseList(rawValue: string | undefined): string[] {
   if (!rawValue) return [];
